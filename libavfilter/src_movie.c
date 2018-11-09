@@ -62,6 +62,7 @@ typedef struct MovieContext {
     int64_t seek_point;   ///< seekpoint in microseconds
     double seek_point_d;
     char *format_name;
+    char *protocol_name; // zhd add
     char *file_name;
     char *stream_specs; /**< user-provided list of streams, separated by + */
     int stream_index; /**< for compatibility */
@@ -85,6 +86,8 @@ static const AVOption movie_options[]= {
     { "filename",     NULL,                      OFFSET(file_name),    AV_OPT_TYPE_STRING,                                    .flags = FLAGS },
     { "format_name",  "set format name",         OFFSET(format_name),  AV_OPT_TYPE_STRING,                                    .flags = FLAGS },
     { "f",            "set format name",         OFFSET(format_name),  AV_OPT_TYPE_STRING,                                    .flags = FLAGS },
+    { "protocol_name","set protocol name",       OFFSET(protocol_name),AV_OPT_TYPE_STRING,                                    .flags = FLAGS }, // zhd add
+    { "p",            "set protocol name",       OFFSET(protocol_name),AV_OPT_TYPE_STRING,                                    .flags = FLAGS }, // zhd add
     { "stream_index", "set stream index",        OFFSET(stream_index), AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX,                 FLAGS  },
     { "si",           "set stream index",        OFFSET(stream_index), AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX,                 FLAGS  },
     { "seek_point",   "set seekpoint (seconds)", OFFSET(seek_point_d), AV_OPT_TYPE_DOUBLE, { .dbl =  0 },  0, (INT64_MAX-1) / 1000000, FLAGS },
@@ -218,6 +221,23 @@ static av_cold int movie_common_init(AVFilterContext *ctx)
     if (!movie->file_name) {
         av_log(ctx, AV_LOG_ERROR, "No filename provided!\n");
         return AVERROR(EINVAL);
+    }
+
+    // zhd add
+    if (movie->protocol_name) {
+        char *ptr = NULL;
+        size_t len = strlen(movie->protocol_name) + strlen(movie->file_name) + 2;
+        ptr = av_realloc(NULL, len);
+        if (ptr) {
+            memcpy(ptr, movie->protocol_name, strlen(movie->protocol_name));
+            ptr[strlen(movie->protocol_name)] = ':';
+            memcpy(ptr + strlen(movie->protocol_name) + 1, movie->file_name, strlen(movie->file_name)+1);
+            av_free(movie->file_name);
+            movie->file_name = ptr;
+        }
+        else {
+            ; // TODO: Failed to alloc
+        }
     }
 
     movie->seek_point = movie->seek_point_d * 1000000 + 0.5;
