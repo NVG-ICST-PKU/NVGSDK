@@ -387,6 +387,34 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     int ret, i;
     int size = 0;
 
+    printf("%d\n", lavfi->graph->nb_filters);
+    if (1 || lavfi->graph->nb_filters == 9 + 9 + 1 + 1)
+    {
+    	static int times_zhd = 0;
+    	static int flag_zhd = 0;
+    	char *ret_zhd;
+    	char val_zhd[128] = "";
+//    	printf("%d\n", flag_zhd); //zhd add
+    	void *pos_zhd[2] = {
+    	    		lavfi->graph->filters[1]->priv,
+					lavfi->graph->filters[3]->priv,
+    	    	};
+//    	av_opt_set(lavfi->graph->filters[1]->priv, "filename", val_zhd, 0);
+//    	av_opt_get(lavfi->graph->filters[1]->priv, "filename", 0, &ret_zhd);
+        
+    	if (times_zhd >= 24 * 5)
+    	{
+    		times_zhd = 0;
+    		flag_zhd = (flag_zhd + 1) % 2;
+    		av_opt_set(pos_zhd[(flag_zhd + 1) % 2], "flag_zhd", "0", 0); // previous
+    		av_opt_set(pos_zhd[flag_zhd], "flag_zhd", "1", 0); // current
+    	}
+    	printf("%d %d\n", times_zhd, flag_zhd);
+    	++times_zhd;
+    }
+
+
+
     if (lavfi->subcc_packet.size) {
         *pkt = lavfi->subcc_packet;
         av_init_packet(&lavfi->subcc_packet);

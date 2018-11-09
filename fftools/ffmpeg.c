@@ -4648,7 +4648,7 @@ static int transcode(void)
     InputStream *ist;
     int64_t timer_start;
     int64_t total_packets_written = 0;
-
+    //初始化，打开所有输出流的编码器，打开所有输入流的编码器，写入所有输出文件的文件头。
     ret = transcode_init();
     if (ret < 0)
         goto fail;
@@ -4663,7 +4663,7 @@ static int transcode(void)
     if ((ret = init_input_threads()) < 0)
         goto fail;
 #endif
-
+    //循环，直到收到系统信号才退出。
     while (!received_sigterm) {
         int64_t cur_time= av_gettime_relative();
 
@@ -4690,7 +4690,7 @@ static int transcode(void)
 #if HAVE_THREADS
     free_input_threads();
 #endif
-
+    //文件处理完，把缓冲中剩余的数据写到输出文件中。
     /* at the end of stream, we must flush the decoder buffers */
     for (i = 0; i < nb_input_streams; i++) {
         ist = input_streams[i];
@@ -4701,7 +4701,7 @@ static int transcode(void)
     flush_encoders();
 
     term_exit();
-
+    //为输出文件写文件尾(有的不需要)
     /* write the trailer if needed and close file */
     for (i = 0; i < nb_output_files; i++) {
         os = output_files[i]->ctx;

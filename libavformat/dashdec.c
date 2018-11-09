@@ -140,7 +140,8 @@ typedef struct DASHContext {
     struct representation **videos;
     int n_audios;
     struct representation **audios;
-
+    int orientation; //add by zk
+    
     /* MediaPresentationDescription Attribute */
     uint64_t media_presentation_duration;
     uint64_t suggested_presentation_delay;
@@ -710,14 +711,14 @@ static int resolve_content_path(AVFormatContext *s, const char *url, int *max_ur
     int start =  0;
     int rootId = 0;
     int updated = 0;
-    int size = 0;
+    int size = 0; 
     int i;
     int tmp_max_url_size = strlen(url);
 
     for (i = n_baseurl_nodes-1; i >= 0 ; i--) {
         text = xmlNodeGetContent(baseurl_nodes[i]);
         if (!text)
-            continue;
+            continue; 
         tmp_max_url_size += strlen(text);
         if (ishttp(text)) {
             xmlFree(text);
@@ -1973,6 +1974,7 @@ static int dash_read_header(AVFormatContext *s)
 
     /* Open the demuxer for video and audio components if available */
     for (i = 0; i < c->n_videos; i++) {
+        
         struct representation *cur_video = c->videos[i];
         if (i > 0 && c->is_init_section_common_video) {
             copy_init_section(cur_video,c->videos[0]);
@@ -2071,13 +2073,39 @@ static int dash_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     DASHContext *c = s->priv_data;
     int ret = 0, i;
-    int64_t mints = 0;
+    int64_t mints = 0, bandwidth = 0;
     struct representation *cur = NULL;
-
+    //av_log(NULL, AV_LOG_INFO, "orientation \n");
     recheck_discard_flags(s, c->videos, c->n_videos);
     recheck_discard_flags(s, c->audios, c->n_audios);
-
-    for (i = 0; i < c->n_videos; i++) {
+    /*static int flag = 0;
+    ++flag;
+    if(1){
+        av_log(NULL, AV_LOG_INFO, "flag %d\n", (flag/120)%2+1);
+        cur = c->videos[(flag/120)%2+1];*/
+    if(c->orientation){
+        for (i = 0; i < c->n_videos; i++) {
+            struct representation *pls = c->videos[i];
+            if(!pls->ctx)
+                continue;
+            if(!cur || pls->bandwidth > bandwidth){
+                cur = pls;
+                bandwidth = pls->bandwidth;
+            }
+        }
+    }//add by zk
+    else{
+        for (i = 0; i < c->n_videos; i++) {
+            struct representation *pls = c->videos[i];
+            if(!pls->ctx)
+                continue;
+            if(!cur || pls->bandwidth < bandwidth){
+                cur = pls;
+                bandwidth = pls->bandwidth;
+            }
+        }
+    } //add by zk
+    /*for (i = 0; i < c->n_videos; i++) {
         struct representation *pls = c->videos[i];
         if (!pls->ctx)
             continue;
@@ -2085,7 +2113,7 @@ static int dash_read_packet(AVFormatContext *s, AVPacket *pkt)
             cur = pls;
             mints = pls->cur_timestamp;
         }
-    }
+    }*/
     for (i = 0; i < c->n_audios; i++) {
         struct representation *pls = c->audios[i];
         if (!pls->ctx)
@@ -2198,7 +2226,9 @@ set_seq_num:
 static int dash_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp, int flags)
 {
     int ret = 0, i;
+    int64_t bandwidth = 0;
     DASHContext *c = s->priv_data;
+    struct representation *cur = NULL;
     int64_t seek_pos_msec = av_rescale_rnd(timestamp, 1000,
                                            s->streams[stream_index]->time_base.den,
                                            flags & AVSEEK_FLAG_BACKWARD ?
@@ -2208,8 +2238,20 @@ static int dash_read_seek(AVFormatContext *s, int stream_index, int64_t timestam
 
     /* Seek in discarded streams with dry_run=1 to avoid reopening them */
     for (i = 0; i < c->n_videos; i++) {
-        if (!ret)
-            ret = dash_seek(s, c->videos[i], seek_pos_msec, flags, !c->videos[i]->ctx);
+        struct representation *pls = c->videos[i];
+        if(c->orientation){
+            if(!cur || pls->bandwidth > bandwidth){
+                cur = pls;
+                bandwidth = pls->bandwidth;
+            }
+        }
+        else{
+            if(!cur || pls->bandwidth < bandwidth){
+                cur = pls;
+                bandwidth = pls->bandwidth;
+            }
+        }
+            ret = dash_seek(s, cur, seek_pos_msec, flags, !cur->ctx);
     }
     for (i = 0; i < c->n_audios; i++) {
         if (!ret)
@@ -2244,6 +2286,10 @@ static const AVOption dash_options[] = {
         OFFSET(allowed_extensions), AV_OPT_TYPE_STRING,
         {.str = "aac,m4a,m4s,m4v,mov,mp4"},
         INT_MIN, INT_MAX, FLAGS},
+    {"orientation", "set the value of orientation",
+        OFFSET(orientation), AV_OPT_TYPE_INT,
+        {.i64 = 0},
+        0, INT_MAX, FLAGS}, //add by zk
     {NULL}
 };
 
