@@ -236,7 +236,8 @@ static av_cold int movie_common_init(AVFilterContext *ctx)
             movie->file_name = ptr;
         }
         else {
-            ; // TODO: Failed to alloc
+            av_log(ctx, AV_LOG_ERROR, "Failed to add protocol name to filename!\n");
+            return AVERROR(EINVAL);
         }
     }
 
