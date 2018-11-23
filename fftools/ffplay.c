@@ -2920,7 +2920,53 @@ static int read_thread(void *arg)
     if (infinite_buffer < 0 && is->realtime)
         infinite_buffer = 1;
 
+    // zhd add
+    double time_zhd = 0;
+    int flag_zhd = 1;
+    int last_sec_zhd = 0;
+    int wanted_zhd = 0;
+    int step_zhd = 2;
+    av_log(NULL, AV_LOG_INFO, "begin to read\n");
     for (;;) {
+        time_zhd = get_master_clock(is);
+        if (last_sec_zhd < (int)time_zhd) {
+            last_sec_zhd = (int)time_zhd;
+            av_log(NULL, AV_LOG_INFO, "time: %d\n", last_sec_zhd); // zhd add
+        }
+        if (time_zhd > 0) {
+
+//          wanted_zhd = (int)time_zhd/step_zhd%(ic->nb_streams-1);
+            wanted_zhd = (int)time_zhd/step_zhd%2?0:ic->nb_streams-1;
+            if (wanted_zhd != st_index[AVMEDIA_TYPE_VIDEO]) {
+                av_log(NULL, AV_LOG_INFO, "begin--------------------------------------------------------\n");
+                av_log(NULL, AV_LOG_INFO, "last stream index: %d\n", st_index[AVMEDIA_TYPE_VIDEO]);
+                av_log(NULL, AV_LOG_INFO, "wanted index: %d\n", wanted_zhd);
+                stream_component_close(is, st_index[AVMEDIA_TYPE_VIDEO]);
+
+                st_index[AVMEDIA_TYPE_VIDEO] = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, wanted_zhd, -1, NULL, 0);
+
+                av_log(NULL, AV_LOG_INFO, "next stream index: %d\n", st_index[AVMEDIA_TYPE_VIDEO]);
+//              is->show_mode = show_mode;
+                if (st_index[AVMEDIA_TYPE_VIDEO] >= 0) {
+                    AVStream *st = ic->streams[st_index[AVMEDIA_TYPE_VIDEO]];
+                AVCodecParameters *codecpar = st->codecpar;
+                AVRational sar = av_guess_sample_aspect_ratio(ic, st, NULL);
+                if (codecpar->width)
+                    set_default_window_size(codecpar->width, codecpar->height, sar);
+                }
+
+                stream_component_open(is, st_index[AVMEDIA_TYPE_VIDEO]);
+
+                int64_t ts = time_zhd * (double)AV_TIME_BASE;
+
+                if (is->ic->start_time != AV_NOPTS_VALUE)
+                    ts += is->ic->start_time;
+                stream_seek(is, ts, 0, 0);
+
+                av_log(NULL, AV_LOG_INFO, "end----------------------------------------------------------\n");
+            }
+        }
+
         if (is->abort_request)
             break;
         if (is->paused != is->last_paused) {
