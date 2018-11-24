@@ -41,6 +41,7 @@
 #include "video.h"
 #include "vf_overlay.h"
 
+
 typedef struct ThreadData {
     AVFrame *dst, *src;
 } ThreadData;
@@ -929,6 +930,7 @@ end:
 
 static int do_blend(FFFrameSync *fs)
 {
+    
     AVFilterContext *ctx = fs->parent;
     AVFrame *mainpic, *second;
     OverlayContext *s = ctx->priv;
@@ -976,13 +978,13 @@ static int do_blend(FFFrameSync *fs)
 static av_cold int init(AVFilterContext *ctx)
 {
     OverlayContext *s = ctx->priv;
-
-    s->fs.on_event = do_blend;
+    s->fs.on_event = do_blend;  //fs的类型是FFFrameSync 也就是说要帧同步的时候就要调用do_blend函数
     return 0;
 }
 
 static int activate(AVFilterContext *ctx)
 {
+    av_log(NULL , AV_LOG_DEBUG, "activate \n"); //byx
     OverlayContext *s = ctx->priv;
     return ff_framesync_activate(&s->fs);
 }

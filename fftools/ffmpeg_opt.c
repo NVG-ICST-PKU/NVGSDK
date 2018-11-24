@@ -3254,6 +3254,8 @@ int ffmpeg_parse_options(int argc, char **argv)
     /* split the commandline into an internal representation */
     ret = split_commandline(&octx, argc, argv, options, groups,
                             FF_ARRAY_ELEMS(groups));
+    //byx Employ FF_ARRAY_ELEMS instead of manually calculating array length.
+    
     if (ret < 0) {
         av_log(NULL, AV_LOG_FATAL, "Error splitting the argument list: ");
         goto fail;

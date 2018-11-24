@@ -184,6 +184,7 @@ void av_bsf_flush(AVBSFContext *ctx)
 
 int av_bsf_send_packet(AVBSFContext *ctx, AVPacket *pkt)
 {
+    av_log(NULL, AV_LOG_DEBUG, "av_bsf_send_packet \n");//byx
     int ret;
 
     if (!pkt || (!pkt->data && !pkt->side_data_elems)) {
@@ -210,6 +211,7 @@ int av_bsf_send_packet(AVBSFContext *ctx, AVPacket *pkt)
 
 int av_bsf_receive_packet(AVBSFContext *ctx, AVPacket *pkt)
 {
+    av_log(NULL, AV_LOG_DEBUG, "av_bsf_receive_packet \n"); //byx
     return ctx->filter->filter(ctx, pkt);
 }
 

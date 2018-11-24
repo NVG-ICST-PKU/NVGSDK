@@ -292,7 +292,7 @@ int ffurl_alloc(URLContext **puc, const char *filename, int flags,
 {
     const URLProtocol *p = NULL;
 
-    p = url_find_protocol(filename);
+    p = url_find_protocol(filename);  //本地的dash选中的是file这个protocol
     if (p)
        return url_alloc_for_protocol(puc, p, filename, flags, int_cb);
 

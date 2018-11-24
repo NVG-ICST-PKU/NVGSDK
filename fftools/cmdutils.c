@@ -333,7 +333,7 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
     } else if (po->flags & OPT_DOUBLE) {
         *(double *)dst = parse_number_or_die(opt, arg, OPT_DOUBLE, -INFINITY, INFINITY);
     } else if (po->u.func_arg) {
-        int ret = po->u.func_arg(optctx, opt, arg);
+        int ret = po->u.func_arg(optctx, opt, arg);  //byx 调用opt_format 也就是-f的固定参数
         if (ret < 0) {
             av_log(NULL, AV_LOG_ERROR,
                    "Failed to set value '%s' for option '%s': %s\n",
@@ -373,7 +373,7 @@ int parse_option(void *optctx, const char *opt, const char *arg,
         return AVERROR(EINVAL);
     }
 
-    ret = write_option(optctx, po, opt, arg);
+    ret = write_option(optctx, po, opt, arg); //byx 写入了file_iformat
     if (ret < 0)
         return ret;
 
@@ -383,6 +383,7 @@ int parse_option(void *optctx, const char *opt, const char *arg,
 void parse_options(void *optctx, int argc, char **argv, const OptionDef *options,
                    void (*parse_arg_function)(void *, const char*))
 {
+    //输入是parse_options(NULL, argc, argv, options, opt_input_file);
     const char *opt;
     int optindex, handleoptions = 1, ret;
 
@@ -399,14 +400,15 @@ void parse_options(void *optctx, int argc, char **argv, const OptionDef *options
                 handleoptions = 0;
                 continue;
             }
-            opt++;
+            opt++;  //把-f中的-去掉，前进一个字符
 
             if ((ret = parse_option(optctx, opt, argv[optindex], options)) < 0)
+                //parse_option没有返回值，是直接写进去的
                 exit_program(1);
             optindex += ret;
         } else {
             if (parse_arg_function)
-                parse_arg_function(optctx, opt);
+                parse_arg_function(optctx, opt); //byx 最开始input_filename还是不存在的 要用opt写进去 经过这步骤之后input_filename="nullsrc ..."
         }
     }
 }
@@ -764,22 +766,33 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
     av_log(NULL, AV_LOG_DEBUG, "Splitting the commandline.\n");
 
     while (optindex < argc) {
+        //byx - 取参数队列
         const char *opt = argv[optindex++], *arg;
         const OptionDef *po;
         int ret;
 
         av_log(NULL, AV_LOG_DEBUG, "Reading option '%s' ...", opt);
 
+        //byx 一般的参数格式都是 -xx xxx
+        //如果不是-xx xxx的形式，那么只有两种情况
+        //一种是--，我们就跳过
         if (opt[0] == '-' && opt[1] == '-' && !opt[2]) {
             dashdash = optindex;
             continue;
         }
+        
+        //byx -如果不是以 - 开头，另外一种情况，就是定义输出文件
         /* unnamed group separators, e.g. output filename */
         if (opt[0] != '-' || !opt[1] || dashdash+1 == optindex) {
+            //byx-把这个输出的路径，设置到输出的octx结构体中。
             finish_group(octx, 0, opt);
             av_log(NULL, AV_LOG_DEBUG, " matched as %s.\n", groups[0].name);
             continue;
         }
+        
+        //byx-当排除了两种特殊情况，剩下的就是标准的参数形式了
+        //首先，我们要把参数的类型指针加1，这样就把-去掉了
+
         opt++;
 
 #define GET_ARG(arg)                                                           \
@@ -790,16 +803,30 @@ do {                                                                           \
         return AVERROR(EINVAL);                                                \
     }                                                                          \
 } while (0)
-
+        
+        //byx 首先，我们解析-i,-i 后面，是必须要跟文件名的
         /* named group separators, e.g. -i */
         if ((ret = match_group_separator(groups, nb_groups, opt)) >= 0) {
+            //byx 这里调用get_arg,就是为了避免-i后面没有输入的情况
             GET_ARG(arg);
+            //byx 我们从-i后面解析到输入文件路径后，就把它存储到octx的输入部分
             finish_group(octx, ret, arg);
             av_log(NULL, AV_LOG_DEBUG, " matched as %s with argument '%s'.\n",
                    groups[ret].name, arg);
             continue;
         }
 
+        //byx
+        //当我们处理完上面三种情况： 一个异常，一个输入，一个输出。
+        //剩下的就是option选项了
+        //处理opt，流程很简单，
+        //首先，从argv中拿到opt，看它opt是否合理，同时把argv的下标加1
+        //然后再次比较argv，因为我们已经把下标加1，这时拿到的是下个argv，即opt的值
+        //拿到opt的值后，我们再把他们两个成对存起来。
+        //首先，我们看这个opt是否是ffmpeg默认的参数
+        //如果是，看它是否允许缺失，如果允许缺失，我们直接设置。
+        //如果不允许缺失，但是参数后面又没有具体值，就返回err。
+        
         /* normal options */
         po = find_option(options, opt);
         if (po->name) {
@@ -817,7 +844,9 @@ do {                                                                           \
                    "argument '%s'.\n", po->name, po->help, arg);
             continue;
         }
-
+        
+        //对于ffmpeg中没有的参数
+        //那么可能是设置错了，也可能是某个具体的解码器才能使用，是专属option，我们设置到AVOptions中
         /* AVOptions */
         if (argv[optindex]) {
             ret = opt_default(NULL, opt, argv[optindex]);

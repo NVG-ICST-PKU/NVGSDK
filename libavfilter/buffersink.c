@@ -107,11 +107,11 @@ static int get_frame_internal(AVFilterContext *ctx, AVFrame *frame, int flags, i
         } else if ((flags & AV_BUFFERSINK_FLAG_NO_REQUEST)) {
             return AVERROR(EAGAIN);
         } else if (inlink->frame_wanted_out) {
-            ret = ff_filter_graph_run_once(ctx->graph);
+            ret = ff_filter_graph_run_once(ctx->graph);  //Run one round of processing on a filter graph.
             if (ret < 0)
                 return ret;
         } else {
-            ff_inlink_request_frame(inlink);
+            ff_inlink_request_frame(inlink);   //先走这一步ff_inlink_request_frame 使得frame_wanted_out=1 再进入到ff_filter_graph_run_once
         }
     }
 }

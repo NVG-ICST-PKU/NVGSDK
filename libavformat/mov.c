@@ -7735,7 +7735,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     pkt->stream_index = sc->ffindex;
-    pkt->dts = sample->timestamp;
+    pkt->dts = sample->timestamp;  //timestamp时间戳 重点重点
     if (sample->flags & AVINDEX_DISCARD_FRAME) {
         pkt->flags |= AV_PKT_FLAG_DISCARD;
     }

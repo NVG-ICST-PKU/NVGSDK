@@ -167,11 +167,11 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
         lavfi->graph_str = av_strdup(avctx->url);
 
     /* parse the graph, create a stream for each open output */
-    if (!(lavfi->graph = avfilter_graph_alloc()))
+    if (!(lavfi->graph = avfilter_graph_alloc()))  //初始化graph
         FAIL(AVERROR(ENOMEM));
 
     if ((ret = avfilter_graph_parse_ptr(lavfi->graph, lavfi->graph_str,
-                                    &input_links, &output_links, avctx)) < 0)
+                                    &input_links, &output_links, avctx)) < 0)  //这两个LINK的类型是AVFilterInOut
         goto end;
 
     if (input_links) {
@@ -238,7 +238,7 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
     /* for each open output create a corresponding stream */
     for (i = 0, inout = output_links; inout; i++, inout = inout->next) {
         AVStream *st;
-        if (!(st = avformat_new_stream(avctx, NULL)))
+        if (!(st = avformat_new_stream(avctx, NULL)))  //在这里根据output创建了一个新流（虽然是都是默认值）
             FAIL(AVERROR(ENOMEM));
         st->id = i;
     }
@@ -248,7 +248,7 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
     if (!lavfi->sinks)
         FAIL(AVERROR(ENOMEM));
 
-    for (i = 0, inout = output_links; inout; i++, inout = inout->next) {
+    for (i = 0, inout = output_links; inout; i++, inout = inout->next) {  //好几个循环的条件都是inout=inout->next 因为只有一个output_link 所以for循环只走一次
         AVFilterContext *sink;
 
         type = avfilter_pad_get_type(inout->filter_ctx->output_pads, inout->pad_idx);
@@ -297,7 +297,7 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
     }
 
     /* configure the graph */
-    if ((ret = avfilter_graph_config(lavfi->graph, avctx)) < 0)
+    if ((ret = avfilter_graph_config(lavfi->graph, avctx)) < 0)  //做检查，检查无误就证明图已经连好了
         goto end;
 
     if (lavfi->dump_graph) {
@@ -308,14 +308,14 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
     }
 
     /* fill each stream with the information in the corresponding sink */
-    for (i = 0; i < lavfi->nb_sinks; i++) {
+    for (i = 0; i < lavfi->nb_sinks; i++) {   //只有一个sink
         AVFilterContext *sink = lavfi->sinks[lavfi->stream_sink_map[i]];
         AVRational time_base = av_buffersink_get_time_base(sink);
         AVStream *st = avctx->streams[i];
-        st->codecpar->codec_type = av_buffersink_get_type(sink);
+        st->codecpar->codec_type = av_buffersink_get_type(sink);    //AVMEDIA_TYPE_VIDEO
         avpriv_set_pts_info(st, 64, time_base.num, time_base.den);
         if (av_buffersink_get_type(sink) == AVMEDIA_TYPE_VIDEO) {
-            st->codecpar->codec_id   = AV_CODEC_ID_RAWVIDEO;
+            st->codecpar->codec_id   = AV_CODEC_ID_RAWVIDEO;   //在这里确定的codec_id什么的
             st->codecpar->format     = av_buffersink_get_format(sink);
             st->codecpar->width      = av_buffersink_get_w(sink);
             st->codecpar->height     = av_buffersink_get_h(sink);
@@ -387,6 +387,8 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     int ret, i;
     int size = 0;
 
+    int transTime = 3 * AV_TIME_BASE; //byx-add
+    
     if (lavfi->subcc_packet.size) {
         *pkt = lavfi->subcc_packet;
         av_init_packet(&lavfi->subcc_packet);
@@ -413,8 +415,38 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
             continue;
         } else if (ret < 0)
             return ret;
-        d = av_rescale_q_rnd(frame->pts, tb, AV_TIME_BASE_Q, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+        d = av_rescale_q_rnd(frame->pts, tb, AV_TIME_BASE_Q, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);  //重要！这个d就是真实播放的时间（微秒），他需要除以AV_TIME_BASE，才能得到真实的时间（秒）。
+        
+        //byx-add
+//        if( (int) d / transTime < 1){
+//            for(int i = 0 ; i < lavfi->graph->nb_filters ; i++){
+//                if(lavfi->graph->filters[i]->filter->name == "movie"){
+//                    av_opt_set(lavfi->graph->filters[i]->priv, "orientation", "0", 0);  //byx-add
+//                }
+//            }
+//        }
+        if( (int) d / transTime % 2 == 0){
+            for(int i = 0 ; i < lavfi->graph->nb_filters ; i++){
+                if(lavfi->graph->filters[i]->filter->name == "movie"){
+                    av_opt_set(lavfi->graph->filters[i]->priv, "orientation", "0", 0);  //byx-add
+                }
+            }
+        }
+        else{
+            for(int i = 0 ; i < lavfi->graph->nb_filters ; i++){
+                if(lavfi->graph->filters[i]->filter->name == "movie"){
+                    av_opt_set(lavfi->graph->filters[i]->priv, "orientation", "1", 0);  //byx-add
+                }
+            }
+        }
+        //byx-add
+            
+        
+        
         ff_dlog(avctx, "sink_idx:%d time:%f\n", i, d);
+        
+        av_log(NULL, AV_LOG_DEBUG, "sink_idx:%d time:%f\n", i, d);  //byx-add
+
         av_frame_unref(frame);
 
         if (d < min_pts) {
@@ -426,6 +458,9 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
         return AVERROR_EOF;
 
     ff_dlog(avctx, "min_pts_sink_idx:%i\n", min_pts_sink_idx);
+    
+    av_log(NULL, AV_LOG_DEBUG, "min_pts_sink_idx:%i \n", min_pts_sink_idx);  //byx-add
+
 
     av_buffersink_get_frame_flags(lavfi->sinks[min_pts_sink_idx], frame, 0);
     stream_idx = lavfi->sink_stream_map[min_pts_sink_idx];
@@ -511,3 +546,4 @@ AVInputFormat ff_lavfi_demuxer = {
     .flags          = AVFMT_NOFILE,
     .priv_class     = &lavfi_class,
 };
+

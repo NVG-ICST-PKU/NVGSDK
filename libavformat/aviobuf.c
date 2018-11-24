@@ -1160,7 +1160,7 @@ int ffio_open_whitelist(AVIOContext **s, const char *filename, int flags,
                          const AVIOInterruptCB *int_cb, AVDictionary **options,
                          const char *whitelist, const char *blacklist
                         )
-{
+{ //ffurl_open()和ffio_fdopen()。其中ffurl_open()用于初始化URLContext，ffio_fdopen()用于根据URLContext初始化AVIOContext。URLContext中包含的URLProtocol完成了具体的协议读写等工作。AVIOContext则是在URLContext的读写函数外面加上了一层“包装”（通过retry_transfer_wrapper()函数）。 https://blog.csdn.net/leixiaohua1020/article/details/41199947
     URLContext *h;
     int err;
 

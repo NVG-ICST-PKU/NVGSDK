@@ -685,7 +685,7 @@ static void frame_queue_unref_item(Frame *vp)
 
 static int frame_queue_init(FrameQueue *f, PacketQueue *pktq, int max_size, int keep_last)
 {
-    int i;
+    int i;  //&is->pictq, &is->videoq, VIDEO_PICTURE_QUEUE_SIZE, 1 这是输入
     memset(f, 0, sizeof(FrameQueue));
     if (!(f->mutex = SDL_CreateMutex())) {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
@@ -2577,11 +2577,11 @@ static int stream_component_open(VideoState *is, int stream_index)
     if (stream_index < 0 || stream_index >= ic->nb_streams)
         return -1;
 
-    avctx = avcodec_alloc_context3(NULL);
+    avctx = avcodec_alloc_context3(NULL);  //初始化一个AVCodecContext 并且设置为默认值
     if (!avctx)
         return AVERROR(ENOMEM);
 
-    ret = avcodec_parameters_to_context(avctx, ic->streams[stream_index]->codecpar);
+    ret = avcodec_parameters_to_context(avctx, ic->streams[stream_index]->codecpar); //根据codecpar，也就是CodecParameters把这个AVCodecContext设置为对应的值
     if (ret < 0)
         goto fail;
     avctx->pkt_timebase = ic->streams[stream_index]->time_base;
@@ -2745,7 +2745,7 @@ static int is_realtime(AVFormatContext *s)
 /* this thread gets the stream from the disk or the network */
 static int read_thread(void *arg)
 {
-    VideoState *is = arg;
+    VideoState *is = arg;  //byx is的类型是VideoState ic的类型是AVFormatContext
     AVFormatContext *ic = NULL;
     int err, i, ret;
     int st_index[AVMEDIA_TYPE_NB];
@@ -2769,7 +2769,7 @@ static int read_thread(void *arg)
     is->last_subtitle_stream = is->subtitle_stream = -1;
     is->eof = 0;
 
-    ic = avformat_alloc_context();
+    ic = avformat_alloc_context(); //ic是AVFormatContext
     if (!ic) {
         av_log(NULL, AV_LOG_FATAL, "Could not allocate context.\n");
         ret = AVERROR(ENOMEM);
@@ -2806,7 +2806,7 @@ static int read_thread(void *arg)
         AVDictionary **opts = setup_find_stream_info_opts(ic, codec_opts);
         int orig_nb_streams = ic->nb_streams;
 
-        err = avformat_find_stream_info(ic, opts);
+        err = avformat_find_stream_info(ic, opts);  //查找decoder, open decoder
 
         for (i = 0; i < orig_nb_streams; i++)
             av_dict_free(&opts[i]);
@@ -2896,7 +2896,7 @@ static int read_thread(void *arg)
 
     /* open the streams */
     if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
-        stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
+        stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);  //decoder init, decoder start
     }
 
     ret = -1;
@@ -2920,6 +2920,56 @@ static int read_thread(void *arg)
     if (infinite_buffer < 0 && is->realtime)
         infinite_buffer = 1;
 
+    // zhd add--------------------------------------------
+//    double time_zhd = 0;
+//    int flag_zhd = 1;
+//    int last_sec_zhd = 0;
+//    int wanted_zhd = 0;
+//    int step_zhd = 2;
+//    av_log(NULL, AV_LOG_INFO, "begin to read\n");
+//    for (;;) {
+//        time_zhd = get_master_clock(is);
+//        if (last_sec_zhd < (int)time_zhd) {
+//            last_sec_zhd = (int)time_zhd;
+//            av_log(NULL, AV_LOG_INFO, "time: %d\n", last_sec_zhd); // zhd add
+//        }
+//        if (time_zhd > 0) {
+//
+//            //            wanted_zhd = (int)time_zhd/step_zhd%(ic->nb_streams-1);
+//            wanted_zhd = (int)time_zhd/step_zhd%2?0:ic->nb_streams-1;
+//            if (wanted_zhd != st_index[AVMEDIA_TYPE_VIDEO]) {
+//                av_log(NULL, AV_LOG_INFO, "begin--------------------------------------------------------\n");
+//                av_log(NULL, AV_LOG_INFO, "last stream index: %d\n", st_index[AVMEDIA_TYPE_VIDEO]);
+//                av_log(NULL, AV_LOG_INFO, "wanted index: %d\n", wanted_zhd);
+//                stream_component_close(is, st_index[AVMEDIA_TYPE_VIDEO]);
+//
+//                st_index[AVMEDIA_TYPE_VIDEO] = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, wanted_zhd, -1, NULL, 0);
+//
+//                av_log(NULL, AV_LOG_INFO, "next stream index: %d\n", st_index[AVMEDIA_TYPE_VIDEO]);
+//                //                is->show_mode = show_mode;
+//                if (st_index[AVMEDIA_TYPE_VIDEO] >= 0) {
+//                    AVStream *st = ic->streams[st_index[AVMEDIA_TYPE_VIDEO]];
+//                    AVCodecParameters *codecpar = st->codecpar;
+//                    AVRational sar = av_guess_sample_aspect_ratio(ic, st, NULL);
+//                    if (codecpar->width)
+//                        set_default_window_size(codecpar->width, codecpar->height, sar);
+//                }
+//
+//                stream_component_open(is, st_index[AVMEDIA_TYPE_VIDEO]);
+//
+//                int64_t ts = time_zhd * (double)AV_TIME_BASE;
+//
+//                if (is->ic->start_time != AV_NOPTS_VALUE)
+//                    ts += is->ic->start_time;
+//                stream_seek(is, ts, 0, 0);
+//
+//                av_log(NULL, AV_LOG_INFO, "end----------------------------------------------------------\n");
+//            }
+//        }
+//
+//
+       //zhd----------------------------------------------------
+        
     for (;;) {
         if (is->abort_request)
             break;
@@ -3009,7 +3059,7 @@ static int read_thread(void *arg)
                 goto fail;
             }
         }
-        ret = av_read_frame(ic, pkt);
+        ret = av_read_frame(ic, pkt);   // 读帧
         if (ret < 0) {
             if ((ret == AVERROR_EOF || avio_feof(ic->pb)) && !is->eof) {
                 if (is->video_stream >= 0)
@@ -3067,26 +3117,26 @@ static int read_thread(void *arg)
 
 static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
 {
-    VideoState *is;
+    VideoState *is;  //    输入是is = stream_open(input_filename, file_iformat);
 
     is = av_mallocz(sizeof(VideoState));
     if (!is)
         return NULL;
-    is->filename = av_strdup(filename);
+    is->filename = av_strdup(filename); //byx filename就是“nullsrc...”
     if (!is->filename)
         goto fail;
-    is->iformat = iformat;
+    is->iformat = iformat;  //ff_lavfi_demuxer
     is->ytop    = 0;
-    is->xleft   = 0;
+    is->xleft   = 0;  //可以证明在frame中x的方向是水平向右 y的方向是垂直向下
 
-    /* start video display */
+    /* start video display */  //初始化视频、字幕和音频的frame_queue
     if (frame_queue_init(&is->pictq, &is->videoq, VIDEO_PICTURE_QUEUE_SIZE, 1) < 0)
         goto fail;
     if (frame_queue_init(&is->subpq, &is->subtitleq, SUBPICTURE_QUEUE_SIZE, 0) < 0)
         goto fail;
     if (frame_queue_init(&is->sampq, &is->audioq, SAMPLE_QUEUE_SIZE, 1) < 0)
         goto fail;
-
+    //byx packet_queue_init 初始化各个PacketQueue（视频/音频/字幕）
     if (packet_queue_init(&is->videoq) < 0 ||
         packet_queue_init(&is->audioq) < 0 ||
         packet_queue_init(&is->subtitleq) < 0)
@@ -3110,6 +3160,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     is->audio_volume = startup_volume;
     is->muted = 0;
     is->av_sync_type = av_sync_type;
+    //byx read_thread 读取媒体信息线程。
     is->read_tid     = SDL_CreateThread(read_thread, "read_thread", is);
     if (!is->read_tid) {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateThread(): %s\n", SDL_GetError());
@@ -3261,7 +3312,7 @@ static void seek_chapter(VideoState *is, int incr)
                                  AV_TIME_BASE_Q), 0, 0);
 }
 
-/* handle an event sent by the GUI */
+/* handle an event sent by the GUI */  //处理GUI的事件
 static void event_loop(VideoState *cur_stream)
 {
     SDL_Event event;
@@ -3269,7 +3320,7 @@ static void event_loop(VideoState *cur_stream)
 
     for (;;) {
         double x;
-        refresh_loop_wait_event(cur_stream, &event);
+        refresh_loop_wait_event(cur_stream, &event);   //不断的循环，等待事件发生
         switch (event.type) {
         case SDL_KEYDOWN:
             if (exit_on_keydown || event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
@@ -3481,7 +3532,7 @@ static int opt_height(void *optctx, const char *opt, const char *arg)
 
 static int opt_format(void *optctx, const char *opt, const char *arg)
 {
-    file_iformat = av_find_input_format(arg);
+    file_iformat = av_find_input_format(arg);  //byx 寻找AVInputFormat
     if (!file_iformat) {
         av_log(NULL, AV_LOG_FATAL, "Unknown input format: %s\n", arg);
         return AVERROR(EINVAL);
@@ -3532,7 +3583,7 @@ static int opt_show_mode(void *optctx, const char *opt, const char *arg)
 }
 
 static void opt_input_file(void *optctx, const char *filename)
-{
+{   //输入是parse_arg_function(optctx, opt);
     if (input_filename) {
         av_log(NULL, AV_LOG_FATAL,
                "Argument '%s' provided as input filename, but '%s' was already specified.\n",
@@ -3666,7 +3717,7 @@ void show_help_default(const char *opt, const char *arg)
 int main(int argc, char **argv)
 {
     int flags;
-    VideoState *is;
+    VideoState *is;  //播放视频所需要的数据，在stream_open这里赋值给is
 
     init_dynload();
 
@@ -3675,18 +3726,21 @@ int main(int argc, char **argv)
 
     /* register all codecs, demux and protocols */
 #if CONFIG_AVDEVICE
-    avdevice_register_all();
+    avdevice_register_all();  //byx 注册输入输出设备
 #endif
-    avformat_network_init();
+    avformat_network_init();  //byx 注册网络库环境
 
     init_opts();
 
     signal(SIGINT , sigterm_handler); /* Interrupt (ANSI).    */
     signal(SIGTERM, sigterm_handler); /* Termination (ANSI).  */
 
-    show_banner(argc, argv, options);
+    show_banner(argc, argv, options);  //byx 打印输出FFmpeg版本信息（编译时间，编译选项，类库信息等）
 
-    parse_options(NULL, argc, argv, options, opt_input_file);
+    parse_options(NULL, argc, argv, options, opt_input_file); //byx 解析输入的命令 这个options实际上是一个全局数组，存储着每一个命令，数组类型是OptionDef。
+    //byx 经过这一步之后file_iformat设置成了ff_lavfi_demuxer input_filename是"nullsrc xxx"
+    //byx opt_input_file的目的就是在options中找到input_file是什么 并且把它们写到input_filename中（如果只是个文件名没有乱七八糟的-x的话）
+    //byx 如果是-f之类的就判断它是什么format格式的，并且写到file_iformat中 这一步不涉及打开输入文件
 
     if (!input_filename) {
         show_usage();
@@ -3710,7 +3764,7 @@ int main(int argc, char **argv)
     }
     if (display_disable)
         flags &= ~SDL_INIT_VIDEO;
-    if (SDL_Init (flags)) {
+    if (SDL_Init (flags)) {  //byx SDL_Init()用于初始化SDL。FFplay中视频的显示和声音的播放都用到了SDL。 这里创建了SDLTimer这个线程
         av_log(NULL, AV_LOG_FATAL, "Could not initialize SDL - %s\n", SDL_GetError());
         av_log(NULL, AV_LOG_FATAL, "(Did you set the DISPLAY variable?)\n");
         exit(1);
@@ -3747,13 +3801,13 @@ int main(int argc, char **argv)
         }
     }
 
-    is = stream_open(input_filename, file_iformat);
+    is = stream_open(input_filename, file_iformat);  //byx 打开输入媒体 （如果只是一个文件没有filter的话 file_iformat可能是NULL）
     if (!is) {
         av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
         do_exit(NULL);
     }
 
-    event_loop(is);
+    event_loop(is);  //byx 处理各种消息，不停地循环下去
 
     /* never returns */
 

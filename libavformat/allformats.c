@@ -519,7 +519,7 @@ const AVInputFormat *av_demuxer_iterate(void **opaque)
     if (i < size) {
         f = demuxer_list[i];
     } else if (outdev_list) {
-        f = indev_list[i - size];
+        f = indev_list[i - size];  //byx 在这条语句中找到了ff_lavfi_demuxer这个demuxer 它是在indev_list.c中定义的，这个又是在alldevices中定义的
     }
 
     if (f)

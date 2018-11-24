@@ -256,6 +256,7 @@ static void framesync_inject_status(FFFrameSync *fs, unsigned in, int status, in
 int ff_framesync_get_frame(FFFrameSync *fs, unsigned in, AVFrame **rframe,
                             unsigned get)
 {
+    //byx 从buffer中拿到frame
     AVFrame *frame;
     unsigned need_copy = 0, i;
     int64_t pts_next;

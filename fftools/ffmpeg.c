@@ -1439,7 +1439,7 @@ static int reap_filters(int flush)
 
         if (!ost->filter || !ost->filter->graph->graph)
             continue;
-        filter = ost->filter->filter;
+        filter = ost->filter->filter;  //byx OutputStream的filter指针指向buffersink.c定义的AVFilterContext。也就是本文讨论的，最后一个AVFilterContext
 
         if (!ost->initialized) {
             char error[1024] = "";
@@ -2232,6 +2232,7 @@ static int ifilter_send_eof(InputFilter *ifilter, int64_t pts)
 // (pkt==NULL means get more output, pkt->size==0 is a flush/drain packet)
 static int decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame, AVPacket *pkt)
 {
+    av_log(NULL, AV_LOG_DEBUG, "decode函数\n"); //byx
     int ret;
 
     *got_frame = 0;
@@ -2245,6 +2246,7 @@ static int decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame, AVPacke
     }
 
     ret = avcodec_receive_frame(avctx, frame);
+    
     if (ret < 0 && ret != AVERROR(EAGAIN))
         return ret;
     if (ret >= 0)
@@ -2257,7 +2259,7 @@ static int send_frame_to_filters(InputStream *ist, AVFrame *decoded_frame)
 {
     int i, ret;
     AVFrame *f;
-
+    av_log(NULL, AV_LOG_DEBUG, "send_frame_to_filters, ist->nb_filters = %d \n", ist->nb_filters); //byx
     av_assert1(ist->nb_filters > 0); /* ensure ret is initialized */
     for (i = 0; i < ist->nb_filters; i++) {
         if (i < ist->nb_filters - 1) {
@@ -2351,7 +2353,8 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output, int64_
     int64_t best_effort_timestamp;
     int64_t dts = AV_NOPTS_VALUE;
     AVPacket avpkt;
-
+    av_log(NULL, AV_LOG_DEBUG, "decode_video : ist->file_index = %d \n", ist->file_index); //byx
+    
     // With fate-indeo3-2, we're getting 0-sized packets before EOF for some
     // reason. This seems like a semi-critical bug. Don't trigger EOF, and
     // skip the packet.
@@ -2615,6 +2618,7 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt, int no_eo
 
         ist->pts = ist->next_pts;
         ist->dts = ist->next_dts;
+        //byx /* 依据当前的packet是视频、音频还是数据，选择对应的解码器解码当前的packet */
 
         switch (ist->dec_ctx->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
@@ -4264,7 +4268,8 @@ static int process_input(int file_index)
         ifile->eagain = 1;
         return ret;
     }
-    if (ret < 0 && ifile->loop) {
+    if (ret < 0 && ifile->loop) {  //byx-正常不走
+        printf("ret < 0 && ifile->loop \n"); //byx
         AVCodecContext *avctx;
         for (i = 0; i < ifile->nb_streams; i++) {
             ist = input_streams[ifile->ist_index + i];
@@ -4294,7 +4299,8 @@ static int process_input(int file_index)
             return ret;
         }
     }
-    if (ret < 0) {
+    if (ret < 0) { //byx-正常不走
+
         if (ret != AVERROR_EOF) {
             print_error(is->url, ret);
             if (exit_on_error)
@@ -4323,9 +4329,10 @@ static int process_input(int file_index)
         return AVERROR(EAGAIN);
     }
 
-    reset_eagain();
+    reset_eagain();  //byx-推测还是个检查过程
 
     if (do_pkt_dump) {
+        printf("do_pkt_dump = %d \n", do_pkt_dump); //byx
         av_pkt_dump_log2(NULL, AV_LOG_INFO, &pkt, do_hex_dump,
                          is->streams[pkt.stream_index]);
     }
@@ -4341,8 +4348,10 @@ static int process_input(int file_index)
     ist->data_size += pkt.size;
     ist->nb_packets++;
 
-    if (ist->discard)
+    if (ist->discard){
+        printf("ist->discard = %d \n", ist->discard); //byx-不用
         goto discard_packet;
+    }
 
     if (exit_on_error && (pkt.flags & AV_PKT_FLAG_CORRUPT)) {
         av_log(NULL, AV_LOG_FATAL, "%s: corrupt input packet in stream %d\n", is->url, pkt.stream_index);
@@ -4415,7 +4424,7 @@ static int process_input(int file_index)
             memcpy(dst_data, src_sd->data, src_sd->size);
         }
     }
-
+    //byx    /* 将packet中的时间戳转换成ffmpeg内部的时间戳 */
     if (pkt.dts != AV_NOPTS_VALUE)
         pkt.dts += av_rescale_q(ifile->ts_offset, AV_TIME_BASE_Q, ist->st->time_base);
     if (pkt.pts != AV_NOPTS_VALUE)
@@ -4443,7 +4452,7 @@ static int process_input(int file_index)
                 pkt.pts -= av_rescale_q(delta, AV_TIME_BASE_Q, ist->st->time_base);
         }
     }
-
+//byx  /* 计算出当前packet所包含的音频/视频帧在显示时要持续的时长 */
     duration = av_rescale_q(ifile->duration, ifile->time_base, ist->st->time_base);
     if (pkt.pts != AV_NOPTS_VALUE) {
         pkt.pts += duration;
@@ -4503,7 +4512,7 @@ static int process_input(int file_index)
     }
 
     sub2video_heartbeat(ist, pkt.pts);
-
+//byx /* 解码当前的这个packet */
     process_input_packet(ist, &pkt, 0);
 
 discard_packet:
@@ -4547,7 +4556,7 @@ static int transcode_from_filter(FilterGraph *graph, InputStream **best_ist)
             input_files[ist->file_index]->eof_reached)
             continue;
         nb_requests = av_buffersrc_get_nb_failed_requests(ifilter->filter);
-        if (nb_requests > nb_requests_max) {
+        if (nb_requests > nb_requests_max) {  //byx-在这里切换不同的ist
             nb_requests_max = nb_requests;
             *best_ist = ist;
         }
@@ -4602,7 +4611,7 @@ static int transcode_step(void)
                 exit_program(1);
             }
         }
-        if ((ret = transcode_from_filter(ost->filter->graph, &ist)) < 0)
+        if ((ret = transcode_from_filter(ost->filter->graph, &ist)) < 0)  //byx 在这里切换输入
             return ret;
         if (!ist)
             return 0;
@@ -4625,6 +4634,7 @@ static int transcode_step(void)
     }
 
     ret = process_input(ist->file_index);
+    av_log(NULL, AV_LOG_DEBUG, "ist->file_index = %d\n",ist->file_index); //byx
     if (ret == AVERROR(EAGAIN)) {
         if (input_files[ist->file_index]->eagain)
             ost->unavailable = 1;

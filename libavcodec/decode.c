@@ -678,12 +678,13 @@ static int decode_receive_frame_internal(AVCodecContext *avctx, AVFrame *frame)
     return ret;
 }
 
-int attribute_align_arg avcodec_send_packet(AVCodecContext *avctx, const AVPacket *avpkt)
+int attribute_align_arg avcodec_send_packet(AVCodecContext *avctx, const AVPacket *avpkt)  //Supply raw packet data as input to a decoder.
 {
+    av_log(NULL, AV_LOG_DEBUG, "avcodec_send_packet \n"); //byx
     AVCodecInternal *avci = avctx->internal;
     int ret;
 
-    if (!avcodec_is_open(avctx) || !av_codec_is_decoder(avctx->codec))
+    if (!avcodec_is_open(avctx) || !av_codec_is_decoder(avctx->codec))  //// 检查 AVCodecContext 是否已打开，并且 AVCodec 是否为解码器
         return AVERROR(EINVAL);
 
     if (avctx->internal->draining)
@@ -692,21 +693,21 @@ int attribute_align_arg avcodec_send_packet(AVCodecContext *avctx, const AVPacke
     if (avpkt && !avpkt->size && avpkt->data)
         return AVERROR(EINVAL);
 
-    av_packet_unref(avci->buffer_pkt);
+    av_packet_unref(avci->buffer_pkt);  //Wipe the packet.
     if (avpkt && (avpkt->data || avpkt->side_data_elems)) {
-        ret = av_packet_ref(avci->buffer_pkt, avpkt);
+        ret = av_packet_ref(avci->buffer_pkt, avpkt);   //Setup a new reference to the data described by a given packet
         if (ret < 0)
             return ret;
     }
 
-    ret = av_bsf_send_packet(avci->filter.bsfs[0], avci->buffer_pkt);
+    ret = av_bsf_send_packet(avci->filter.bsfs[0], avci->buffer_pkt);  //Submit a packet for filtering  // 把 AVPacket 的数据传给 avci->filter.bsfs[0]
     if (ret < 0) {
         av_packet_unref(avci->buffer_pkt);
         return ret;
     }
 
     if (!avci->buffer_frame->buf[0]) {
-        ret = decode_receive_frame_internal(avctx, avci->buffer_frame);
+        ret = decode_receive_frame_internal(avctx, avci->buffer_frame);  //解码 真正的解码！！！！！！！
         if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
             return ret;
     }
@@ -743,6 +744,7 @@ static int apply_cropping(AVCodecContext *avctx, AVFrame *frame)
 
 int attribute_align_arg avcodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 {
+    av_log(NULL, AV_LOG_DEBUG, "avcodec_receive_frame \n"); //byx
     AVCodecInternal *avci = avctx->internal;
     int ret;
 
@@ -754,12 +756,14 @@ int attribute_align_arg avcodec_receive_frame(AVCodecContext *avctx, AVFrame *fr
     if (avci->buffer_frame->buf[0]) {
         av_frame_move_ref(frame, avci->buffer_frame);
     } else {
+        av_log(NULL, AV_LOG_DEBUG, "decode_receive_frame_internal \n"); //byx
         ret = decode_receive_frame_internal(avctx, frame);
         if (ret < 0)
             return ret;
     }
 
     if (avctx->codec_type == AVMEDIA_TYPE_VIDEO) {
+        av_log(NULL, AV_LOG_DEBUG, "apply cropping \n"); //byx
         ret = apply_cropping(avctx, frame);
         if (ret < 0) {
             av_frame_unref(frame);

@@ -126,7 +126,7 @@ AVInputFormat *av_find_input_format(const char *short_name)
 }
 
 AVInputFormat *av_probe_input_format3(AVProbeData *pd, int is_opened,
-                                      int *score_ret)
+                                      int *score_ret)  //av_probe_input_format3()根据输入数据查找合适的AVInputFormat。输入的数据位于AVProbeData中
 {
     AVProbeData lpd = *pd;
     const AVInputFormat *fmt1 = NULL;
@@ -157,7 +157,7 @@ AVInputFormat *av_probe_input_format3(AVProbeData *pd, int is_opened,
             nodat = ID3_GREATER_PROBE;
     }
 
-    while ((fmt1 = av_demuxer_iterate(&i))) {
+    while ((fmt1 = av_demuxer_iterate(&i))) {  //该函数最主要的部分是一个循环。该循环调用av_iformat_next()遍历FFmpeg中所有的AVInputFormat，并根据以下规则确定AVInputFormat和输入媒体数据的匹配分数（score，反应匹配程度）：
         if (!is_opened == !(fmt1->flags & AVFMT_NOFILE) && strcmp(fmt1->name, "image2"))
             continue;
         score = 0;
@@ -250,7 +250,7 @@ int av_probe_input_buffer2(AVIOContext *pb, AVInputFormat **fmt,
             *semi = '\0';
         }
     }
-
+// probe_size从PROBE_BUF_MIN开始分配，并每次读取这么多。直到max_probe_size或者已经探测到流格式为止。
     for (probe_size = PROBE_BUF_MIN; probe_size <= max_probe_size && !*fmt;
          probe_size = FFMIN(probe_size << 1,
                             FFMAX(max_probe_size, probe_size + 1))) {
@@ -277,7 +277,7 @@ int av_probe_input_buffer2(AVIOContext *pb, AVInputFormat **fmt,
         memset(pd.buf + pd.buf_size, 0, AVPROBE_PADDING_SIZE);
 
         /* Guess file format. */
-        *fmt = av_probe_input_format2(&pd, 1, &score);
+        *fmt = av_probe_input_format2(&pd, 1, &score);  //在确定了max_probe_size之后，函数就会进入到一个循环中，调用avio_read()读取数据并且使用av_probe_input_format2()（该函数前文已经记录过）推测文件格式。
         if (*fmt) {
             /* This can only be true in the last iteration. */
             if (score <= AVPROBE_SCORE_RETRY) {

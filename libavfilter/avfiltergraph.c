@@ -171,7 +171,7 @@ AVFilterContext *avfilter_graph_alloc_filter(AVFilterGraph *graph,
                                              const AVFilter *filter,
                                              const char *name)
 {
-    AVFilterContext **filters, *s;
+    AVFilterContext **filters, *s;  //输入是(ctx, filt, inst_name) 分别是那个要加入的graph 要加入的filter还有filter的名字
 
     if (graph->thread_type && !graph->internal->thread_execute) {
         if (graph->execute) {
@@ -185,17 +185,17 @@ AVFilterContext *avfilter_graph_alloc_filter(AVFilterGraph *graph,
         }
     }
 
-    s = ff_filter_alloc(filter, name);
+    s = ff_filter_alloc(filter, name);  //byx - 建立一个新的filter实例并且赋值给s s是AVFilterContext
     if (!s)
         return NULL;
 
-    filters = av_realloc(graph->filters, sizeof(*filters) * (graph->nb_filters + 1));
+    filters = av_realloc(graph->filters, sizeof(*filters) * (graph->nb_filters + 1));  //filters的类型是AVFilterContext
     if (!filters) {
         avfilter_free(s);
         return NULL;
     }
 
-    graph->filters = filters;
+    graph->filters = filters; //把刚才extend之后的filters赋值给graph->filters 然后下面把s赋值给新extend的filters 这样的话让graph里面的filter+1
     graph->filters[graph->nb_filters++] = s;
 
     s->graph = graph;
@@ -1439,7 +1439,7 @@ int avfilter_graph_request_oldest(AVFilterGraph *graph)
     return 0;
 }
 
-int ff_filter_graph_run_once(AVFilterGraph *graph)
+int ff_filter_graph_run_once(AVFilterGraph *graph)  //Run one round of processing on a filter graph.
 {
     AVFilterContext *filter;
     unsigned i;
@@ -1451,5 +1451,5 @@ int ff_filter_graph_run_once(AVFilterGraph *graph)
             filter = graph->filters[i];
     if (!filter->ready)
         return AVERROR(EAGAIN);
-    return ff_filter_activate(filter);
+    return ff_filter_activate(filter);  //先是parsed_overlay_24进来了（第12个overlay）
 }

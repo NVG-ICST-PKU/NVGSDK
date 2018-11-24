@@ -96,13 +96,13 @@ static char *parse_link_name(const char **buf, void *log_ctx)
 static int create_filter(AVFilterContext **filt_ctx, AVFilterGraph *ctx, int index,
                          const char *name, const char *args, void *log_ctx)
 {
-    const AVFilter *filt;
+    const AVFilter *filt; //输入是filt_ctx(AVFilterContext), graph(AVFilterGraph), index=0(最开始的时候), name(nullsrc), opts(size=360x720), log_ctx
     char name2[30];
-    const char *inst_name = NULL, *filt_name = NULL;
+    const char *inst_name = NULL, *filt_name = NULL;  //这两个值最开始都是空的 然后inst_name变成Parsed_nullsrc_0 filt_name变成nullsrc
     char *tmp_args = NULL;
     int ret, k;
 
-    av_strlcpy(name2, name, sizeof(name2));
+    av_strlcpy(name2, name, sizeof(name2)); //把string从name拷贝到name2
 
     for (k = 0; name2[k]; k++) {
         if (name2[k] == '@' && name[k+1]) {
@@ -111,15 +111,15 @@ static int create_filter(AVFilterContext **filt_ctx, AVFilterGraph *ctx, int ind
             filt_name = name2;
             break;
         }
-    }
+    } //发现没有@
 
     if (!inst_name) {
-        snprintf(name2, sizeof(name2), "Parsed_%s_%d", name, index);
+        snprintf(name2, sizeof(name2), "Parsed_%s_%d", name, index); //这回知道index是干嘛的了，给filter标号的，比如movie1 movie2
         inst_name = name2;
         filt_name = name;
     }
 
-    filt = avfilter_get_by_name(filt_name);
+    filt = avfilter_get_by_name(filt_name); //找到了filt_name=nullsrc对应的filter和movie对应的filter 其中movie的filter-init是movie_common_init
 
     if (!filt) {
         av_log(log_ctx, AV_LOG_ERROR,
@@ -127,7 +127,7 @@ static int create_filter(AVFilterContext **filt_ctx, AVFilterGraph *ctx, int ind
         return AVERROR(EINVAL);
     }
 
-    *filt_ctx = avfilter_graph_alloc_filter(ctx, filt, inst_name);
+    *filt_ctx = avfilter_graph_alloc_filter(ctx, filt, inst_name);  //byx 在graph中加入filter 名字是inst_name 返回AVFilterContext
     if (!*filt_ctx) {
         av_log(log_ctx, AV_LOG_ERROR,
                "Error creating filter '%s'\n", filt_name);
@@ -146,7 +146,7 @@ static int create_filter(AVFilterContext **filt_ctx, AVFilterGraph *ctx, int ind
             args = ctx->scale_sws_opts;
     }
 
-    ret = avfilter_init_str(*filt_ctx, args);
+    ret = avfilter_init_str(*filt_ctx, args);  //将参数args配置到新建的filter中，也就是filt_ctx
     if (ret < 0) {
         av_log(log_ctx, AV_LOG_ERROR,
                "Error initializing filter '%s'", filt_name);
@@ -180,15 +180,15 @@ static int create_filter(AVFilterContext **filt_ctx, AVFilterGraph *ctx, int ind
 static int parse_filter(AVFilterContext **filt_ctx, const char **buf, AVFilterGraph *graph,
                         int index, void *log_ctx)
 {
-    char *opts = NULL;
-    char *name = av_get_token(buf, "=,;[");
+    char *opts = NULL;  //输入是&filter, &filters, graph, index, log_ctx
+    char *name = av_get_token(buf, "=,;[");  //把这几个符号之前的都拿出来 放到name中 剩下的留给buf
     int ret;
 
     if (**buf == '=') {
         (*buf)++;
-        opts = av_get_token(buf, "[],;");
+        opts = av_get_token(buf, "[],;"); //目前都不涉及对冒号：的操作
     }
-
+    //name = nullsrc opts = size=360x720
     ret = create_filter(filt_ctx, graph, index, name, opts, log_ctx);
     av_free(name);
     av_free(opts);
@@ -249,7 +249,7 @@ static int link_filter_inouts(AVFilterContext *filt_ctx,
                               AVFilterInOut **curr_inputs,
                               AVFilterInOut **open_inputs, void *log_ctx)
 {
-    int pad, ret;
+    int pad, ret; //输入filter, &curr_inputs, &open_inputs, log_ctx
 
     for (pad = 0; pad < filt_ctx->nb_inputs; pad++) {
         AVFilterInOut *p = *curr_inputs;
@@ -261,7 +261,7 @@ static int link_filter_inouts(AVFilterContext *filt_ctx,
             return AVERROR(ENOMEM);
 
         if (p->filter_ctx) {
-            ret = link_filter(p->filter_ctx, p->pad_idx, filt_ctx, pad, log_ctx);
+            ret = link_filter(p->filter_ctx, p->pad_idx, filt_ctx, pad, log_ctx);  //通过循环分别把两个inputFilter和overlayFilter连接起来
             av_freep(&p->name);
             av_freep(&p);
             if (ret < 0)
@@ -287,7 +287,7 @@ static int link_filter_inouts(AVFilterContext *filt_ctx,
             return AVERROR(ENOMEM);
         currlinkn->filter_ctx  = filt_ctx;
         currlinkn->pad_idx = pad;
-        insert_inout(curr_inputs, currlinkn);
+        insert_inout(curr_inputs, currlinkn);  //把这个生成的AVFilterInOut：currlinkn又赋给了curr_inputs 表示现在的输入是刚才生成的那个currlinkn
     }
 
     return 0;
@@ -296,7 +296,7 @@ static int link_filter_inouts(AVFilterContext *filt_ctx,
 static int parse_inputs(const char **buf, AVFilterInOut **curr_inputs,
                         AVFilterInOut **open_outputs, void *log_ctx)
 {
-    AVFilterInOut *parsed_inputs = NULL;
+    AVFilterInOut *parsed_inputs = NULL;  // 输入是&filters, &curr_inputs, &open_outputs, log_ctx
     int pad = 0;
 
     while (**buf == '[') {
@@ -310,7 +310,7 @@ static int parse_inputs(const char **buf, AVFilterInOut **curr_inputs,
         match = extract_inout(name, open_outputs);
 
         if (match) {
-            av_free(name);
+            av_free(name); //在open_outputs中找到了，就把它拿出来 把name free掉
         } else {
             /* Not in the list, so add it as an input */
             if (!(match = av_mallocz(sizeof(AVFilterInOut)))) {
@@ -343,7 +343,7 @@ static int parse_outputs(const char **buf, AVFilterInOut **curr_inputs,
         char *name = parse_link_name(buf, log_ctx);
         AVFilterInOut *match;
 
-        AVFilterInOut *input = *curr_inputs;
+        AVFilterInOut *input = *curr_inputs;  //curr_inputs是parsed_movie_2
 
         if (!name)
             return AVERROR(EINVAL);
@@ -352,9 +352,9 @@ static int parse_outputs(const char **buf, AVFilterInOut **curr_inputs,
             av_log(log_ctx, AV_LOG_ERROR,
                    "No output pad can be associated to link label '%s'.\n", name);
             av_free(name);
-            return AVERROR(EINVAL);
+            return AVERROR(EINVAL);  //input是parsed_movie_2
         }
-        *curr_inputs = (*curr_inputs)->next;
+        *curr_inputs = (*curr_inputs)->next; //curr_inputs变为NULL 只留下input
 
         /* First check if the label is not in the open_inputs list */
         match = extract_inout(name, open_inputs);
@@ -383,7 +383,7 @@ static int parse_outputs(const char **buf, AVFilterInOut **curr_inputs,
 
 static int parse_sws_flags(const char **buf, AVFilterGraph *graph)
 {
-    char *p = strchr(*buf, ';');
+    char *p = strchr(*buf, ';'); //byx 该函数返回在字符串 str 中第一次出现字符 c 的位置，如果未找到该字符则返回 NULL。
 
     if (strncmp(*buf, "sws_flags=", 10))
         return 0;
@@ -539,9 +539,9 @@ int avfilter_graph_parse_ptr(AVFilterGraph *graph, const char *filters,
                          AVFilterInOut **open_inputs_ptr, AVFilterInOut **open_outputs_ptr,
                          void *log_ctx)
 {
-    int index = 0, ret = 0;
+    int index = 0, ret = 0;  
     char chr = 0;
-
+    //byx 输入是lavfi->graph, lavfi->graph_str,&input_links, &output_links, avctx  lavfi的类型是LavfiContext avctx的类型是AVFormatContext
     AVFilterInOut *curr_inputs = NULL;
     AVFilterInOut *open_inputs  = open_inputs_ptr  ? *open_inputs_ptr  : NULL;
     AVFilterInOut *open_outputs = open_outputs_ptr ? *open_outputs_ptr : NULL;
@@ -567,7 +567,7 @@ int avfilter_graph_parse_ptr(AVFilterGraph *graph, const char *filters,
                 goto end;
         }
 
-        if ((ret = link_filter_inouts(filter, &curr_inputs, &open_inputs, log_ctx)) < 0)
+        if ((ret = link_filter_inouts(filter, &curr_inputs, &open_inputs, log_ctx)) < 0) //[tmp0][tmp1] xxx [tmp2]这个时候才会用到这个
             goto end;
 
         if ((ret = parse_outputs(&filters, &curr_inputs, &open_inputs, &open_outputs,

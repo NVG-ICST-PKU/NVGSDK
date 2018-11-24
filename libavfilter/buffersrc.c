@@ -252,6 +252,7 @@ static int av_buffersrc_add_frame_internal(AVFilterContext *ctx,
         return ret;
 
     if ((flags & AV_BUFFERSRC_FLAG_PUSH)) {
+        av_log(NULL, AV_LOG_DEBUG, "push_frame \n"); //byx
         ret = push_frame(ctx->graph);
         if (ret < 0)
             return ret;

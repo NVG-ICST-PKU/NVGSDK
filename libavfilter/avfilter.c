@@ -166,7 +166,7 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
     link->type    = src->output_pads[srcpad].type;
     av_assert0(AV_PIX_FMT_NONE == -1 && AV_SAMPLE_FMT_NONE == -1);
     link->format  = -1;
-    ff_framequeue_init(&link->fifo, &src->graph->internal->frame_queues);
+    ff_framequeue_init(&link->fifo, &src->graph->internal->frame_queues);  //byx 很重要 把link的fifo绑定到graph->internal->frame_queue里面
 
     return 0;
 }
@@ -696,8 +696,8 @@ AVFilterContext *ff_filter_alloc(const AVFilter *filter, const char *inst_name)
     if (!ret->internal)
         goto err;
     ret->internal->execute = default_execute;
-
-    ret->nb_inputs = avfilter_pad_count(filter->inputs);
+    //对于nullsrc来说 它没有inputs 但是有outputs，名字是default
+    ret->nb_inputs = avfilter_pad_count(filter->inputs); //Get the number of elements in a NULL-terminated array of AVFilterPads (e.g. AVFilter.inputs/outputs).
     if (ret->nb_inputs ) {
         ret->input_pads   = av_malloc_array(ret->nb_inputs, sizeof(AVFilterPad));
         if (!ret->input_pads)
@@ -809,7 +809,7 @@ int ff_filter_get_nb_threads(AVFilterContext *ctx)
 static int process_options(AVFilterContext *ctx, AVDictionary **options,
                            const char *args)
 {
-    const AVOption *o = NULL;
+    const AVOption *o = NULL; //输入是filter, &options, args 其中options是空的
     int ret, count = 0;
     char *av_uninit(parsed_key), *av_uninit(value);
     const char *key;
@@ -831,7 +831,8 @@ static int process_options(AVFilterContext *ctx, AVDictionary **options,
 
         ret = av_opt_get_key_value(&args, "=", ":",
                                    shorthand ? AV_OPT_FLAG_IMPLICIT_KEY : 0,
-                                   &parsed_key, &value);
+                                   &parsed_key, &value); //byx Extract a key-value pair from the beginning of a string. =是key-value的sep :是pairs的sep
+        //经过上一个步骤 parsed_key就变成了size value就变成了360x720 注意，这是第一个开始用冒号分隔数据的地方！！！！！！！
         if (ret < 0) {
             if (ret == AVERROR(EINVAL))
                 av_log(ctx, AV_LOG_ERROR, "No option name near '%s'\n", args);
@@ -849,7 +850,7 @@ static int process_options(AVFilterContext *ctx, AVDictionary **options,
             key = shorthand;
         }
 
-        av_log(ctx, AV_LOG_DEBUG, "Setting '%s' to value '%s'\n", key, value);
+        av_log(ctx, AV_LOG_DEBUG, "Setting '%s' to value '%s'\n", key, value);  //key 和 value就匹配上了
 
         if (av_opt_find(ctx, key, NULL, 0, 0)) {
             ret = av_opt_set(ctx, key, value, 0);
@@ -859,8 +860,8 @@ static int process_options(AVFilterContext *ctx, AVDictionary **options,
                 return ret;
             }
         } else {
-        av_dict_set(options, key, value, 0);
-        if ((ret = av_opt_set(ctx->priv, key, value, AV_OPT_SEARCH_CHILDREN)) < 0) {
+        av_dict_set(options, key, value, 0);  //把这个键值对写到options里面
+        if ((ret = av_opt_set(ctx->priv, key, value, AV_OPT_SEARCH_CHILDREN)) < 0) { //还得把这个键值对写到AVFilterContext的priv里面
             if (!av_opt_find(ctx->priv, key, NULL, 0, AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ)) {
             if (ret == AVERROR_OPTION_NOT_FOUND)
                 av_log(ctx, AV_LOG_ERROR, "Option '%s' not found\n", key);
@@ -923,7 +924,7 @@ int avfilter_init_dict(AVFilterContext *ctx, AVDictionary **options)
 
 int avfilter_init_str(AVFilterContext *filter, const char *args)
 {
-    AVDictionary *options = NULL;
+    AVDictionary *options = NULL; //输入是 *filt_ctx（AVFilterContext）, args （size=360x720）
     AVDictionaryEntry *e;
     int ret = 0;
 
@@ -1015,7 +1016,7 @@ int avfilter_init_str(AVFilterContext *filter, const char *args)
         }
     }
 
-    ret = avfilter_init_dict(filter, &options);
+    ret = avfilter_init_dict(filter, &options);  //在这里调用各个filter的init函数 包括movie和nullsrc的
     if (ret < 0)
         goto fail;
 
@@ -1052,7 +1053,6 @@ static int ff_filter_frame_framed(AVFilterLink *link, AVFrame *frame)
     AVFilterContext *dstctx = link->dst;
     AVFilterPad *dst = link->dstpad;
     int ret;
-
     if (!(filter_frame = dst->filter_frame))
         filter_frame = default_filter_frame;
 
@@ -1079,6 +1079,7 @@ fail:
 
 int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
 {
+    
     int ret;
     FF_TPRINTF_START(NULL, filter_frame); ff_tlog_link(NULL, link, 1); ff_tlog(NULL, " "); ff_tlog_ref(NULL, frame, 1);
 
@@ -1120,7 +1121,7 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
         av_frame_free(&frame);
         return ret;
     }
-    ff_filter_set_ready(link->dst, 300);
+    ff_filter_set_ready(link->dst, 300);  //set ready 按照notability中序号
     return 0;
 
 error:
@@ -1261,6 +1262,8 @@ static int forward_status_change(AVFilterContext *filter, AVFilterLink *in)
 
 static int ff_filter_activate_default(AVFilterContext *filter)
 {
+    av_log(NULL , AV_LOG_DEBUG, "ff_filter_activate_default \n ");  //byx
+
     unsigned i;
 
     for (i = 0; i < filter->nb_inputs; i++) {
@@ -1426,8 +1429,37 @@ int ff_filter_activate(AVFilterContext *filter)
     av_assert1(!(filter->filter->flags & AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC &&
                  filter->filter->activate));
     filter->ready = 0;
+    
+    
+    
+    
+    av_log(NULL , AV_LOG_DEBUG, " =========================== \n ");  //byx
+    if (filter->nb_outputs != 0)
+    {
+        if (filter->nb_inputs == 2)
+        {
+            av_log(NULL , AV_LOG_DEBUG, "input[0]: src = %s, dst = %s \n ", filter->inputs[0]->src->name, filter->inputs[0]->dst->name);  //byx
+            av_log(NULL , AV_LOG_DEBUG, "input[1]: src = %s, dst = %s \n ", filter->inputs[1]->src->name, filter->inputs[1]->dst->name);  //byx
+            av_log(NULL , AV_LOG_DEBUG, "output[0]: src = %s, dst = %s \n ", filter->outputs[0]->src->name, filter->outputs[0]->dst->name);  //byx
+        }
+        else if(filter->nb_inputs == 1)
+        {
+            av_log(NULL , AV_LOG_DEBUG, "input[0]: src = %s, dst = %s \n ", filter->inputs[0]->src->name, filter->inputs[0]->dst->name);  //byx
+            av_log(NULL , AV_LOG_DEBUG, "output[0]: src = %s, dst = %s \n ", filter->outputs[0]->src->name, filter->outputs[0]->dst->name);  //byx
+        }
+    else
+    {
+        av_log(NULL , AV_LOG_DEBUG, "output[0]: src = %s, dst = %s \n ", filter->outputs[0]->src->name, filter->outputs[0]->dst->name);  //byx
+    }
+    }
+
+    av_log(NULL , AV_LOG_DEBUG, "filter->filter->name = %s \n ", filter->filter->name );  //byx
+    
+
     ret = filter->filter->activate ? filter->filter->activate(filter) :
           ff_filter_activate_default(filter);
+    //byx 重要！这里走到了vf_overlay的activate函数
+    
     if (ret == FFERROR_NOT_READY)
         ret = 0;
     return ret;

@@ -97,7 +97,7 @@ static const AVClass av_format_context_class = {
     .child_class_next = format_child_class_next,
     .category       = AV_CLASS_CATEGORY_MUXER,
     .get_category   = get_category,
-};
+};  //byx-图中AVFormatContext结构体的第一个变量为AVClass类型的指针av_class，它在AVFormatContext结构体初始化的时候，被赋值指向了全局静态变量av_format_context_class结构体（定义位于libavformat\options.c）
 
 static int io_open_default(AVFormatContext *s, AVIOContext **pb,
                            const char *url, int flags, AVDictionary **options)

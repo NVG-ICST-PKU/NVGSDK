@@ -72,6 +72,9 @@ typedef struct MovieContext {
     AVFormatContext *format_ctx;
     int eof;
     AVPacket pkt, pkt0;
+    
+    char *orientation; //byx-add
+    char *orientation_last; //byx-add
 
     int max_stream_index; /**< max stream # actually used for output */
     MovieStream *st; /**< array of all streams, one per output */
@@ -93,6 +96,9 @@ static const AVOption movie_options[]= {
     { "s",            "set streams",             OFFSET(stream_specs), AV_OPT_TYPE_STRING, {.str =  0},  CHAR_MAX, CHAR_MAX, FLAGS },
     { "loop",         "set loop count",          OFFSET(loop_count),   AV_OPT_TYPE_INT,    {.i64 =  1},  0,        INT_MAX, FLAGS },
     { "discontinuity", "set discontinuity threshold", OFFSET(discontinuity_threshold), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, INT64_MAX, FLAGS },
+    { "orientation",  "set orientation",         OFFSET(orientation),  AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MAX, CHAR_MAX, FLAGS},  //byx-add
+    { "orientation_last",  "set if orientation is changed",         OFFSET(orientation_last),  AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MAX, CHAR_MAX, FLAGS},  //byx-add
+
     { NULL },
 };
 
@@ -243,7 +249,7 @@ static av_cold int movie_common_init(AVFilterContext *ctx)
     iformat = movie->format_name ? av_find_input_format(movie->format_name) : NULL;
 
     movie->format_ctx = NULL;
-    if ((ret = avformat_open_input(&movie->format_ctx, movie->file_name, iformat, NULL)) < 0) {
+    if ((ret = avformat_open_input(&movie->format_ctx, movie->file_name, iformat, NULL)) < 0) {  //到movie这里又重新打开了avformat_open_input函数
         av_log(ctx, AV_LOG_ERROR,
                "Failed to avformat_open_input '%s'\n", movie->file_name);
         return ret;
@@ -289,6 +295,7 @@ static av_cold int movie_common_init(AVFilterContext *ctx)
         st->discard = AVDISCARD_DEFAULT;
         movie->st[i].st = st;
         movie->max_stream_index = FFMAX(movie->max_stream_index, st->index);
+        av_log(NULL , AV_LOG_DEBUG, "movie->max_stream_index == %d \n", movie->max_stream_index);
         movie->st[i].discontinuity_threshold =
             av_rescale_q(movie->discontinuity_threshold, AV_TIME_BASE_Q, st->time_base);
     }
@@ -311,7 +318,7 @@ static av_cold int movie_common_init(AVFilterContext *ctx)
             return AVERROR(ENOMEM);
         pad.config_props  = movie_config_output_props;
         pad.request_frame = movie_request_frame;
-        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
+        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {   //Insert a new output pad for the filter.
             av_freep(&pad.name);
             return ret;
         }
@@ -477,9 +484,84 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
     int ret, got_frame = 0, pkt_out_id;
     AVFilterLink *outlink;
     AVFrame *frame;
+    av_log(NULL , AV_LOG_DEBUG, "movie----orientation = %s \n", movie->orientation); //byx-add
+    
+    
+    //byx-add ------------------------------------------------------
+
+    if(strcmp(movie->orientation,movie->orientation_last)){
+        av_log(NULL , AV_LOG_DEBUG, "切换 \n"); //byx-add
+
+        int i, wanted_byx, nb_streams = 1, stream_index;
+        char  default_streams[16], *stream_specs, *spec, *cursor;
+        char name[16];
+        AVStream *st1;
+
+        if(!strcmp(movie->orientation,"0")){
+            wanted_byx = 0;
+            av_log(NULL , AV_LOG_DEBUG, "orientation == 0 , wanted_byx == %d \n", wanted_byx);
+        }
+        else{
+            wanted_byx = movie->format_ctx->nb_streams - 1;
+            av_log(NULL , AV_LOG_DEBUG, "orientation == 1 , wanted_byx == %d \n", wanted_byx);
+        }
+    
+        for (i = 0; i < movie->format_ctx->nb_streams; i++)
+            movie->format_ctx->streams[i]->discard = AVDISCARD_ALL;
+
+        stream_specs = movie->stream_specs;
+        if (!stream_specs) {
+            snprintf(default_streams, sizeof(default_streams), "d%c%d",
+                     !strcmp(ctx->filter->name, "amovie") ? 'a' : 'v',
+                     movie->stream_index);
+            stream_specs = default_streams;
+        }
+        for (cursor = stream_specs; *cursor; cursor++)
+            if (*cursor == '+')
+                nb_streams++;
+
+        for (i = 0; i < nb_streams; i++) {
+            spec = av_strtok(stream_specs, "+", &cursor);
+            if (!spec)
+                return AVERROR_BUG;
+            stream_specs = NULL; /* for next strtok */
+            stream_index =  av_find_best_stream(movie->format_ctx, AVMEDIA_TYPE_VIDEO, wanted_byx, -1, NULL, 0);
+            st1 = movie->format_ctx->streams[stream_index];
+            if (!st1)
+                return AVERROR(EINVAL);
+            st1->discard = AVDISCARD_DEFAULT;
+            movie->st[i].st = st1;
+            movie->max_stream_index = FFMAX(movie->max_stream_index, st1->index);
+            av_log(NULL , AV_LOG_DEBUG, "movie->max_stream_index == %d \n", movie->max_stream_index);
+            movie->st[i].discontinuity_threshold =
+            av_rescale_q(movie->discontinuity_threshold, AV_TIME_BASE_Q, st1->time_base);
+        }
+        if (av_strtok(NULL, "+", &cursor))
+            return AVERROR_BUG;
+
+        movie->out_index = av_calloc(movie->max_stream_index + 1,
+                                     sizeof(*movie->out_index));
+        if (!movie->out_index)
+            return AVERROR(ENOMEM);
+        for (i = 0; i <= movie->max_stream_index; i++)
+            movie->out_index[i] = -1;
+        for (i = 0; i < nb_streams; i++) {
+            movie->out_index[movie->st[i].st->index] = i;
+            snprintf(name, sizeof(name), "out%d", i);
+            ret = open_stream(ctx, &movie->st[i]);
+            if (ret < 0)
+                return ret;
+        }
+    }
+
+    movie->orientation_last = movie->orientation;
+
+
+    //byx-add ------------------------------------------------------
 
     if (!pkt->size) {
         if (movie->eof) {
+            av_log(NULL , AV_LOG_DEBUG, "movie-eof出现\n"); //byx-add
             if (movie->st[out_id].done) {
                 if (movie->loop_count != 1) {
                     ret = rewind_file(ctx);
@@ -494,6 +576,9 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
             pkt->stream_index = movie->st[out_id].st->index;
             /* packet is already ready for flushing */
         } else {
+            av_log(NULL , AV_LOG_DEBUG, "movie-eof没出现\n"); //byx-add
+
+            av_opt_set(movie->format_ctx->priv_data, "orientation", movie->orientation, 0); //byx-add
             ret = av_read_frame(movie->format_ctx, &movie->pkt0);
             if (ret < 0) {
                 av_init_packet(&movie->pkt0); /* ready for flushing */
@@ -507,9 +592,13 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
             *pkt = movie->pkt0;
         }
     }
-
+    av_log(NULL, AV_LOG_DEBUG, "src:pkt->stream_index = %d \n", pkt->stream_index);
+    
     pkt_out_id = pkt->stream_index > movie->max_stream_index ? -1 :
                  movie->out_index[pkt->stream_index];
+    av_log(NULL , AV_LOG_DEBUG, "（最大值是多少）movie->max_stream_index = %d \n", movie->max_stream_index );
+    av_log(NULL , AV_LOG_DEBUG, "pkt_out_id = %d \n", pkt_out_id );
+
     if (pkt_out_id < 0) {
         av_packet_unref(&movie->pkt0);
         pkt->size = 0; /* ready for next run */
@@ -580,6 +669,10 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
             describe_frame_to_str((char[1024]){0}, 1024, frame, frame_type, outlink));
 
     if (st->st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+        av_log(ctx, AV_LOG_DEBUG, "frame->format = %d \n", frame->format);
+        av_log(ctx, AV_LOG_DEBUG, "outlink->format = %d \n", outlink->format);
+
+
         if (frame->format != outlink->format) {
             av_log(ctx, AV_LOG_ERROR, "Format changed %s -> %s, discarding frame\n",
                 av_get_pix_fmt_name(outlink->format),
@@ -590,6 +683,7 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
         }
     }
     ret = ff_filter_frame(outlink, frame);
+    
 
     if (ret < 0)
         return ret;
@@ -603,7 +697,7 @@ static int movie_request_frame(AVFilterLink *outlink)
     int ret;
 
     while (1) {
-        ret = movie_push_frame(ctx, out_id);
+        ret = movie_push_frame(ctx, out_id);  //Try to push a frame to the requested output.
         if (ret)
             return FFMIN(ret, 0);
     }
@@ -694,3 +788,5 @@ AVFilter ff_avsrc_amovie = {
 };
 
 #endif /* CONFIG_AMOVIE_FILTER */
+
+

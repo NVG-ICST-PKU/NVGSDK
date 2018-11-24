@@ -158,6 +158,7 @@ typedef struct DASHContext {
     int is_live;
     AVIOInterruptCB *interrupt_callback;
     char *allowed_extensions;
+    char *orientation;   //byx-add
     AVDictionary *avio_opts;
     int max_url_size;
 
@@ -436,6 +437,7 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
         ;
     else if (strcmp(proto_name, "file") || !strncmp(url, "file,", 5))
         return AVERROR_INVALIDDATA;
+    
 
     av_freep(pb);
     ret = avio_open2(pb, url, AVIO_FLAG_READ, c->interrupt_callback, &tmp);
@@ -1633,6 +1635,7 @@ static int open_input(DASHContext *c, struct representation *pls, struct fragmen
     }
 
 cleanup:
+    av_log(NULL , AV_LOG_DEBUG, "go to cleanup \n");
     av_free(url);
     av_dict_free(&opts);
     pls->cur_seg_offset = 0;
@@ -2048,7 +2051,8 @@ static void recheck_discard_flags(AVFormatContext *s, struct representation **p,
     for (i = 0; i < n; i++) {
         struct representation *pls = p[i];
 
-        int needed = !pls->assoc_stream || pls->assoc_stream->discard < AVDISCARD_ALL;
+        av_log(NULL , AV_LOG_DEBUG, "stream: %d pls->assoc_stream->discard = %d \n", i, pls->assoc_stream->discard);  //byx-add
+        int needed = !pls->assoc_stream || pls->assoc_stream->discard < AVDISCARD_ALL;  //assoc_stream:/* demuxer stream associated with this representation */
         if (needed && !pls->ctx) {
             pls->cur_seg_offset = 0;
             pls->init_sec_buf_read_offset = 0;
@@ -2062,6 +2066,7 @@ static void recheck_discard_flags(AVFormatContext *s, struct representation **p,
             close_demux_for_component(pls);
             if (pls->input)
                 ff_format_io_close(pls->parent, &pls->input);
+            
             av_log(s, AV_LOG_INFO, "No longer receiving stream_index %d\n", pls->stream_index);
         }
     }
@@ -2073,19 +2078,89 @@ static int dash_read_packet(AVFormatContext *s, AVPacket *pkt)
     int ret = 0, i;
     int64_t mints = 0;
     struct representation *cur = NULL;
+    
+    av_log(NULL , AV_LOG_DEBUG, "dash-----orientation = %s \n", c->orientation);
+    av_log(NULL, AV_LOG_DEBUG, "-----------------------------------------------------------------------------------------\n");
 
     recheck_discard_flags(s, c->videos, c->n_videos);
     recheck_discard_flags(s, c->audios, c->n_audios);
+    
+    for(i = 0 ; i < c->n_videos ; i++){
+        if(c->videos[i]->ctx)
+            av_log(NULL ,AV_LOG_DEBUG, "ctx - %d 存在 \n", i);
+        else
+            av_log(NULL ,AV_LOG_DEBUG, "ctx - %d 不存在 \n", i);
+    }
 
+    //byx-delete
     for (i = 0; i < c->n_videos; i++) {
         struct representation *pls = c->videos[i];
         if (!pls->ctx)
+        {
+            av_log(NULL, AV_LOG_DEBUG, "%d : !pls->ctx出现 \n", i);
             continue;
+        }
         if (!cur || pls->cur_timestamp < mints) {
             cur = pls;
             mints = pls->cur_timestamp;
+            av_log(NULL, AV_LOG_DEBUG, "%d : !cur || pls->cur_timestamp = %d, mints = %d\n", i, pls->cur_timestamp, mints);
+
         }
     }
+    //byx-delete
+
+    
+//    //byx-add
+//    int bandwidth = 0;
+//    if(!strcmp(c->orientation,"0")){
+//        av_log(NULL , AV_LOG_DEBUG, "orientation == 0 \n");
+//        for (i = 0; i < c->n_videos; i++) {
+//            struct representation *pls = c->videos[i];
+//            if (!pls->ctx)
+//            {
+//                av_log(NULL, AV_LOG_DEBUG, "%d : !pls->ctx出现 \n", i);
+//                continue;
+//            }
+//            if (!cur || pls->cur_timestamp < mints) {
+//                cur = pls;
+//                mints = pls->cur_timestamp;
+//                av_log(NULL, AV_LOG_DEBUG, "%d : !cur || pls->cur_timestamp = %d, mints = %d\n", i, pls->cur_timestamp, mints);
+//
+//            }
+//        }
+//    }
+//    else if(!strcmp(c->orientation,"1")){
+//        av_log(NULL , AV_LOG_DEBUG, "orientation == 1 \n");
+//        for (i = 0; i < c->n_videos; i++) {
+//            struct representation *pls = c->videos[i];
+//            if(!pls->ctx){
+//                av_log(NULL , AV_LOG_DEBUG, "!!!!!!!!!!!!!!!!!!CONTINUE - 1 \n");  //byx-add
+//                continue;
+//            }
+//            if(!cur || pls->bandwidth > bandwidth){
+//                cur = pls;
+//                av_log(NULL , AV_LOG_DEBUG, "!!!!!!!!!!!!!!!!!!cur == %d\n", i);
+//                bandwidth = pls->bandwidth;
+//            }
+//        }
+//    }
+//    else{
+//        av_log(NULL , AV_LOG_DEBUG, "orientation == 2 \n");
+//        for (i = 0; i < c->n_videos; i++) {
+//            struct representation *pls = c->videos[i];
+//            if(!pls->ctx){
+//                av_log(NULL , AV_LOG_DEBUG, "!!!!!!!!!!!!!!!!!!CONTINUE - 0 \n");
+//                continue;
+//            }
+//            if(!cur || pls->bandwidth < bandwidth){
+//                cur = pls;
+//                av_log(NULL , AV_LOG_DEBUG, "!!!!!!!!!!!!!!!!!!cur == %d\n", i);
+//                bandwidth = pls->bandwidth;
+//            }
+//        }
+//    }
+    //byx-add
+    
     for (i = 0; i < c->n_audios; i++) {
         struct representation *pls = c->audios[i];
         if (!pls->ctx)
@@ -2099,15 +2174,22 @@ static int dash_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (!cur) {
         return AVERROR_INVALIDDATA;
     }
+    av_log(NULL , AV_LOG_DEBUG, "dash: s->url: %s , url_template: %s \n", s->url, cur->url_template);
+
     while (!ff_check_interrupt(c->interrupt_callback) && !ret) {
+        av_log(NULL , AV_LOG_DEBUG, "dash: av_read_frame\n");
         ret = av_read_frame(cur->ctx, pkt);
+        av_log(NULL, AV_LOG_DEBUG, "dash:pkt->stream_index = %d \n", pkt->stream_index);
         if (ret >= 0) {
+            av_log(NULL , AV_LOG_DEBUG, "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++dash: ret >= 0\n");
             /* If we got a packet, return it */
             cur->cur_timestamp = av_rescale(pkt->pts, (int64_t)cur->ctx->streams[0]->time_base.num * 90000, cur->ctx->streams[0]->time_base.den);
             pkt->stream_index = cur->stream_index;
             return 0;
         }
         if (cur->is_restart_needed) {
+            av_log(NULL , AV_LOG_DEBUG, "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++dash: cur->is_restart_needed\n");
+
             cur->cur_seg_offset = 0;
             cur->init_sec_buf_read_offset = 0;
             if (cur->input)
@@ -2207,15 +2289,16 @@ static int dash_read_seek(AVFormatContext *s, int stream_index, int64_t timestam
         return AVERROR(ENOSYS);
 
     /* Seek in discarded streams with dry_run=1 to avoid reopening them */
+    //byx-delete
     for (i = 0; i < c->n_videos; i++) {
         if (!ret)
             ret = dash_seek(s, c->videos[i], seek_pos_msec, flags, !c->videos[i]->ctx);
     }
+    //byx-add
     for (i = 0; i < c->n_audios; i++) {
         if (!ret)
             ret = dash_seek(s, c->audios[i], seek_pos_msec, flags, !c->audios[i]->ctx);
     }
-
     return ret;
 }
 
@@ -2223,7 +2306,7 @@ static int dash_probe(AVProbeData *p)
 {
     if (!av_stristr(p->buf, "<MPD"))
         return 0;
-
+    
     if (av_stristr(p->buf, "dash:profile:isoff-on-demand:2011") ||
         av_stristr(p->buf, "dash:profile:isoff-live:2011") ||
         av_stristr(p->buf, "dash:profile:isoff-live:2012") ||
@@ -2244,6 +2327,10 @@ static const AVOption dash_options[] = {
         OFFSET(allowed_extensions), AV_OPT_TYPE_STRING,
         {.str = "aac,m4a,m4s,m4v,mov,mp4"},
         INT_MIN, INT_MAX, FLAGS},
+    {"orientation", "The orientation where user is looking at",
+        OFFSET(orientation), AV_OPT_TYPE_STRING,
+        {.str = "0"},
+        INT_MIN, INT_MAX, FLAGS},  //byx-add
     {NULL}
 };
 
@@ -2260,9 +2347,9 @@ AVInputFormat ff_dash_demuxer = {
     .priv_class     = &dash_class,
     .priv_data_size = sizeof(DASHContext),
     .read_probe     = dash_probe,
-    .read_header    = dash_read_header,
-    .read_packet    = dash_read_packet,
+    .read_header    = dash_read_header,  //byx
+    .read_packet    = dash_read_packet,  //byx
     .read_close     = dash_close,
-    .read_seek      = dash_read_seek,
+    .read_seek      = dash_read_seek,    //byx
     .flags          = AVFMT_NO_BYTE_SEEK,
 };

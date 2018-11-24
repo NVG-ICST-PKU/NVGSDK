@@ -1346,7 +1346,7 @@ typedef struct AVFormatContext {
      *
      * Demuxing only, set by avformat_open_input().
      */
-    struct AVInputFormat *iformat;
+    struct AVInputFormat *iformat; //输入数据的封装格式
 
     /**
      * The output container format.
@@ -1376,7 +1376,7 @@ typedef struct AVFormatContext {
      * iformat/oformat.flags. In such a case, the (de)muxer will handle
      * I/O in some other way and this field will be NULL.
      */
-    AVIOContext *pb;
+    AVIOContext *pb;  //输入数据的缓存
 
     /* stream info */
     /**
@@ -1390,7 +1390,7 @@ typedef struct AVFormatContext {
      *
      * Set by avformat_new_stream(), must not be modified by any other code.
      */
-    unsigned int nb_streams;
+    unsigned int nb_streams;  //音视频流的个数
     /**
      * A list of all streams in the file. New streams are created with
      * avformat_new_stream().
@@ -1402,7 +1402,7 @@ typedef struct AVFormatContext {
      *
      * Freed by libavformat in avformat_free_context().
      */
-    AVStream **streams;
+    AVStream **streams;  //视音频流
 
 #if FF_API_FORMAT_FILENAME
     /**
@@ -1414,7 +1414,7 @@ typedef struct AVFormatContext {
      * @deprecated Use url instead.
      */
     attribute_deprecated
-    char filename[1024];
+    char filename[1024];   //文件名
 #endif
 
     /**
@@ -1449,14 +1449,14 @@ typedef struct AVFormatContext {
      *
      * Demuxing only, set by libavformat.
      */
-    int64_t duration;
+    int64_t duration;  //时长（单位：微秒us，转换为秒需要除以1000000）
 
     /**
      * Total stream bitrate in bit/s, 0 if not
      * available. Never set it directly if the file_size and the
      * duration are known as FFmpeg can compute it automatically.
      */
-    int64_t bit_rate;
+    int64_t bit_rate; //比特率（单位bps，转换为kbps需要除以1000）
 
     unsigned int packet_size;
     int max_delay;
@@ -1574,7 +1574,7 @@ typedef struct AVFormatContext {
      *
      * Freed by libavformat in avformat_free_context().
      */
-    AVDictionary *metadata;
+    AVDictionary *metadata;  //元数据
 
     /**
      * Start time of the stream in real world time, in microseconds
