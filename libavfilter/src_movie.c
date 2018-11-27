@@ -485,13 +485,13 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
     AVFilterLink *outlink;
     AVFrame *frame;
     av_log(NULL , AV_LOG_DEBUG, "movie----orientation = %s \n", movie->orientation); //byx-add
-    
+    av_log(NULL , AV_LOG_DEBUG, "out_id = %d \n", out_id); //byx-add
+
     
     //byx-add ------------------------------------------------------
 
-    if(strcmp(movie->orientation,movie->orientation_last)){
+    if(strcmp(movie->orientation, movie->orientation_last)){
         av_log(NULL , AV_LOG_DEBUG, "切换 \n"); //byx-add
-
         int i, wanted_byx, nb_streams = 1, stream_index;
         char  default_streams[16], *stream_specs, *spec, *cursor;
         char name[16];
@@ -505,7 +505,7 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
             wanted_byx = movie->format_ctx->nb_streams - 1;
             av_log(NULL , AV_LOG_DEBUG, "orientation == 1 , wanted_byx == %d \n", wanted_byx);
         }
-    
+
         for (i = 0; i < movie->format_ctx->nb_streams; i++)
             movie->format_ctx->streams[i]->discard = AVDISCARD_ALL;
 
@@ -531,14 +531,13 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
                 return AVERROR(EINVAL);
             st1->discard = AVDISCARD_DEFAULT;
             movie->st[i].st = st1;
-            movie->max_stream_index = FFMAX(movie->max_stream_index, st1->index);
             av_log(NULL , AV_LOG_DEBUG, "movie->max_stream_index == %d \n", movie->max_stream_index);
             movie->st[i].discontinuity_threshold =
             av_rescale_q(movie->discontinuity_threshold, AV_TIME_BASE_Q, st1->time_base);
         }
         if (av_strtok(NULL, "+", &cursor))
             return AVERROR_BUG;
-
+        
         movie->out_index = av_calloc(movie->max_stream_index + 1,
                                      sizeof(*movie->out_index));
         if (!movie->out_index)
@@ -547,21 +546,19 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
             movie->out_index[i] = -1;
         for (i = 0; i < nb_streams; i++) {
             movie->out_index[movie->st[i].st->index] = i;
+            av_log(NULL , AV_LOG_DEBUG, "in:movie->out_index[movie->st[i].st->index] = %d \n", movie->out_index[movie->st[i].st->index] );
             snprintf(name, sizeof(name), "out%d", i);
-            ret = open_stream(ctx, &movie->st[i]);
-            if (ret < 0)
-                return ret;
         }
     }
 
     movie->orientation_last = movie->orientation;
+    av_log(NULL , AV_LOG_DEBUG, "out:movie->out_index[movie->st[i].st->index] = %d , movie->st[i].st->index = %d \n", movie->out_index[movie->st[0].st->index] , movie->st[0].st->index);
 
 
     //byx-add ------------------------------------------------------
 
     if (!pkt->size) {
         if (movie->eof) {
-            av_log(NULL , AV_LOG_DEBUG, "movie-eof出现\n"); //byx-add
             if (movie->st[out_id].done) {
                 if (movie->loop_count != 1) {
                     ret = rewind_file(ctx);
@@ -576,9 +573,9 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
             pkt->stream_index = movie->st[out_id].st->index;
             /* packet is already ready for flushing */
         } else {
-            av_log(NULL , AV_LOG_DEBUG, "movie-eof没出现\n"); //byx-add
+//            av_opt_set(movie->format_ctx->priv_data, "orientation", movie->orientation, 0); //byx-add
+            av_log(NULL, AV_LOG_DEBUG, "=================av_read_frame=========================== \n");
 
-            av_opt_set(movie->format_ctx->priv_data, "orientation", movie->orientation, 0); //byx-add
             ret = av_read_frame(movie->format_ctx, &movie->pkt0);
             if (ret < 0) {
                 av_init_packet(&movie->pkt0); /* ready for flushing */
@@ -592,12 +589,18 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
             *pkt = movie->pkt0;
         }
     }
-    av_log(NULL, AV_LOG_DEBUG, "src:pkt->stream_index = %d \n", pkt->stream_index);
     
     pkt_out_id = pkt->stream_index > movie->max_stream_index ? -1 :
                  movie->out_index[pkt->stream_index];
+    av_log(NULL, AV_LOG_DEBUG, "============================================ \n");
+
+    av_log(NULL, AV_LOG_DEBUG, "movie:pkt->stream_index = %d \n", pkt->stream_index);
     av_log(NULL , AV_LOG_DEBUG, "（最大值是多少）movie->max_stream_index = %d \n", movie->max_stream_index );
+    av_log(NULL , AV_LOG_DEBUG, " movie->out_index[pkt->stream_index] = %d \n", movie->out_index[pkt->stream_index] );
+
     av_log(NULL , AV_LOG_DEBUG, "pkt_out_id = %d \n", pkt_out_id );
+    av_log(NULL, AV_LOG_DEBUG, "============================================ \n");
+
 
     if (pkt_out_id < 0) {
         av_packet_unref(&movie->pkt0);
@@ -687,6 +690,7 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
 
     if (ret < 0)
         return ret;
+    
     return pkt_out_id == out_id;
 }
 
