@@ -70,6 +70,10 @@ typedef struct MovieContext {
     int64_t discontinuity_threshold;
     int64_t ts_offset;
 
+    int rate_zhd;
+    int rate_last;
+    double d;
+
     AVFormatContext *format_ctx;
     int eof;
     AVPacket pkt, pkt0;
@@ -96,6 +100,8 @@ static const AVOption movie_options[]= {
     { "s",            "set streams",             OFFSET(stream_specs), AV_OPT_TYPE_STRING, {.str =  0},  CHAR_MAX, CHAR_MAX, FLAGS },
     { "loop",         "set loop count",          OFFSET(loop_count),   AV_OPT_TYPE_INT,    {.i64 =  1},  0,        INT_MAX, FLAGS },
     { "discontinuity", "set discontinuity threshold", OFFSET(discontinuity_threshold), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, INT64_MAX, FLAGS },
+    { "rate_zhd",     "set rate_zhd",            OFFSET(rate_zhd),     AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX,                 FLAGS  }, // zhd add
+    { "d",            "set d",                   OFFSET(d),            AV_OPT_TYPE_DOUBLE, { .dbl =  0 },  0, (INT64_MAX-1) / 1000000, FLAGS }, // zhd add
     { NULL },
 };
 
@@ -224,6 +230,7 @@ static av_cold int movie_common_init(AVFilterContext *ctx)
     }
 
     // zhd add
+    movie->rate_last = movie->rate_zhd;
     if (movie->protocol_name) {
         char *ptr = NULL;
         size_t len = strlen(movie->protocol_name) + strlen(movie->file_name) + 2;
@@ -498,6 +505,50 @@ static int movie_push_frame(AVFilterContext *ctx, unsigned out_id)
     int ret, got_frame = 0, pkt_out_id;
     AVFilterLink *outlink;
     AVFrame *frame;
+
+    // zhd add
+    if (movie->rate_zhd != movie->rate_last) {
+        av_log(NULL, AV_LOG_INFO, "movie: rate %d -> %d\n", movie->rate_last, movie->rate_zhd);
+//        av_log(NULL, AV_LOG_INFO, "pts: %lf, timestamp: %d\n", movie->d, (int)(movie->d * 30));
+        movie->rate_last = movie->rate_zhd;
+
+        avcodec_free_context(&movie->st[0].codec_ctx);
+
+//        movie->format_ctx->iformat->read_seek(movie->format_ctx, 9, (int)(movie->d * 30), 1);
+
+        int i, nb_streams = 1, stream_index;
+        char  default_streams[16], *stream_specs, *spec, *cursor;
+        AVStream *st1;
+
+        for (i = 0; i < movie->format_ctx->nb_streams; i++)
+            movie->format_ctx->streams[i]->discard = AVDISCARD_ALL;
+
+        snprintf(default_streams, sizeof(default_streams), "dv%d", movie->rate_zhd);
+        stream_specs = default_streams;
+
+        for (i = 0; i < nb_streams; i++) {
+            spec = av_strtok(stream_specs, "+", &cursor);
+            if (!spec)
+                return AVERROR_BUG;
+            st1 = find_stream(ctx, movie->format_ctx, spec);
+            st1->discard = AVDISCARD_DEFAULT;
+            movie->st[i].st = st1;
+            movie->max_stream_index = FFMAX(movie->max_stream_index, st1->index);
+            av_log(NULL , AV_LOG_INFO, "movie->max_stream_index == %d \n", movie->max_stream_index);
+            movie->st[i].discontinuity_threshold =
+                av_rescale_q(movie->discontinuity_threshold, AV_TIME_BASE_Q, st1->time_base);
+        }
+
+        av_free(movie->out_index);
+        movie->out_index = av_calloc(movie->max_stream_index + 1, sizeof(*movie->out_index));
+
+        for (i = 0; i <= movie->max_stream_index; i++)
+            movie->out_index[i] = -1;
+
+        movie->out_index[movie->st[0].st->index] = 0;
+
+        open_stream(ctx, &movie->st[0]);
+    }
 
     if (!pkt->size) {
         if (movie->eof) {

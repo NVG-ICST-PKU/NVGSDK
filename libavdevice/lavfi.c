@@ -427,6 +427,25 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
 
     ff_dlog(avctx, "min_pts_sink_idx:%i\n", min_pts_sink_idx);
 
+    // zhd add
+    static int time_zhd = 0;
+    int rate_zhd = -1;
+//    av_log(NULL, AV_LOG_INFO, "time: %.2lf\n", min_pts / AV_TIME_BASE);
+    time_zhd = min_pts / AV_TIME_BASE;
+    int time_step = 2;
+    int time_step2 = 3;
+    int stream_nb = 5;
+    if (time_zhd > 2) {
+//        av_opt_get_int(lavfi->graph->filters[1]->priv, "rate_zhd", 0, &rate_zhd);
+//        av_log(NULL, AV_LOG_INFO, "lavfi: %d -> %d\n", rate_zhd, time_zhd/time_step%stream_nb);
+
+        av_opt_set_int(lavfi->graph->filters[1]->priv, "rate_zhd", time_zhd/time_step%stream_nb, 0);
+        av_opt_set_int(lavfi->graph->filters[2]->priv, "rate_zhd", (stream_nb - time_zhd/time_step%stream_nb)%stream_nb, 0);
+        av_opt_set_int(lavfi->graph->filters[3]->priv, "rate_zhd", time_zhd/time_step2%stream_nb, 0);
+
+//        av_opt_set_double(lavfi->graph->filters[0]->priv, "d", min_pts / AV_TIME_BASE, 0);
+    }
+
     av_buffersink_get_frame_flags(lavfi->sinks[min_pts_sink_idx], frame, 0);
     stream_idx = lavfi->sink_stream_map[min_pts_sink_idx];
 
