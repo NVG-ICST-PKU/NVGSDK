@@ -384,7 +384,7 @@ end:
     avfilter_inout_free(&input_links);
     avfilter_inout_free(&output_links);
     if (ret < 0)
-        lavfi_read_close(avctx);
+        vr_read_close(avctx);
     return ret;
 }
 
