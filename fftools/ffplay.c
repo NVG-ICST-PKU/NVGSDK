@@ -3318,6 +3318,30 @@ static void event_loop(VideoState *cur_stream)
     for (;;) {
         double x;
         refresh_loop_wait_event(cur_stream, &event);
+
+        // zhd add -------------------------------------------------------------------
+        if (event.type == SDL_MOUSEBUTTONDOWN &&  event.button.button == SDL_BUTTON_LEFT) {
+            double x_zhd = (double)event.button.x / cur_stream->width;
+            double y_zhd = (double)event.button.y / cur_stream->height;
+            int orientation = 0;
+            if (x_zhd > 0 && x_zhd < 0.5) {
+                ;
+            } else if (x_zhd > 0.5 && x_zhd < 1) {
+                orientation += 10;
+            }
+            if (y_zhd > 0 && y_zhd < 0.5) {
+                ;
+            } else if (y_zhd > 0.5 && y_zhd < 1) {
+                orientation += 1;
+            }
+//            av_log(NULL, AV_LOG_INFO, "x = %d, y = %d\n", event.button.x, event.button.y);
+//            av_log(NULL, AV_LOG_INFO, "width = %d, height = %d\n", cur_stream->width, cur_stream->height);
+//            av_log(NULL, AV_LOG_INFO, "xleft = %d, ytop = %d\n", cur_stream->xleft, cur_stream->ytop);
+//            av_log(NULL, AV_LOG_INFO, "x_zhd = %lf, y_zhd = %lf\n", x_zhd, y_zhd);
+            av_opt_set_int(cur_stream->ic->priv_data, "orientation", orientation, 0);
+        }
+        // -------------------------------------------------------------------
+
         switch (event.type) {
         case SDL_KEYDOWN:
             if (exit_on_keydown || event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
