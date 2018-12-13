@@ -67,6 +67,7 @@ typedef struct VRContext{
     int col;
     int row;     //tile layout
     char *url;   //mpd file
+    char *ori;
 } VRContext;
 
 static int *create_all_formats(int n)
@@ -125,6 +126,7 @@ static int create_subcc_streams(AVFormatContext *avctx)
     }
     return 0;
 }
+
 static int set_opts(char *filter, int x, int y, char *url, char *in, char* in_second, char *out, int flag){
     char cmd[2048];
    
@@ -144,6 +146,7 @@ static int set_opts(char *filter, int x, int y, char *url, char *in, char* in_se
     strcpy(filter,cmd);
     return 0;
 }
+
 static char* vr_set_parameters(VRContext *vr, const char *graph_str){
     char backboard[100000],operation[100000],operation_total[100000];
     char *key, *value;
@@ -161,10 +164,9 @@ static char* vr_set_parameters(VRContext *vr, const char *graph_str){
         av_opt_set(vr, key, value, 0);
         graph_str += strspn(graph_str, WHITESPACES);
     }while(chr==';');
-
     av_free(key);
     av_free(value);
-
+    
     strcpy(filter, "nullsrc");
     int width  = vr->width  * vr->col;
     int height = vr->height * vr->row;
@@ -200,7 +202,6 @@ static char* vr_set_parameters(VRContext *vr, const char *graph_str){
         snprintf(operation, sizeof(operation),"%s%s",operation, filter);
         strcpy(out, overlay_out);
         snprintf(operation_total, sizeof(operation_total),"%s%s",operation_total, operation);
-
     }
     snprintf(backboard, sizeof(backboard),"%s%s",backboard, operation_total);
     return backboard;
@@ -466,7 +467,99 @@ static int create_subcc_packet(AVFormatContext *avctx, AVFrame *frame,
     vr->subcc_packet.pos = frame->pkt_pos;
     return 0;
 }
+static int cal_orientation(VRContext *vr){
+    double mouse_x = vr->x, mouse_y = vr->y; //鼠标坐标
+    double alpha = mouse_x * 2.0 * M_PI;
+    double beta =  mouse_y * M_PI;
+    double sp_x =  sin(beta) * cos(alpha);
+    double sp_y =  - sin(beta) * sin(alpha);
+    double sp_z =  cos(beta);
+    double qua_theta = 0.5 * acos(-sp_x) ; //(-1,0,0)与(sp_x,sp_y,sp_z)做点积运算
+    double qua_w =   cos(qua_theta);
+    double qua_x =   0;             //(-1,0,0)与(sp_x,sp_y,sp_z)做叉积运算
+    double qua_y =   sp_z;
+    double qua_z = - sp_y;
+    double total = sqrt(qua_x*qua_x+qua_y*qua_y+qua_z*qua_z);
+    qua_x = qua_x * sin(qua_theta) / total;
+    qua_y = qua_y * sin(qua_theta) / total;
+    qua_z = qua_z * sin(qua_theta) / total;
+    
+    double RotationMatrix[3][3];
+    
+    RotationMatrix[0][0] = 1.0 - 2.0 * qua_y * qua_y - 2.0 * qua_z * qua_z;
+    RotationMatrix[0][1] =       2.0 * qua_x * qua_y - 2.0 * qua_w * qua_z;
+    RotationMatrix[0][2] =       2.0 * qua_x * qua_z + 2.0 * qua_w * qua_y;
+    
+    RotationMatrix[1][0] =       2.0 * qua_x * qua_y + 2.0 * qua_w * qua_z;
+    RotationMatrix[1][1] = 1.0 - 2.0 * qua_x * qua_x - 2.0 * qua_z * qua_z;
+    RotationMatrix[1][2] =       2.0 * qua_x * qua_y - 2.0 * qua_w * qua_x;
+    
+    RotationMatrix[2][0] =       2.0 * qua_x * qua_z - 2.0 * qua_w * qua_y;
+    RotationMatrix[2][1] =       2.0 * qua_y * qua_z + 2.0 * qua_w * qua_x;
+    RotationMatrix[2][2] = 1.0 - 2.0 * qua_x * qua_x - 2.0 * qua_y * qua_y;
+    
+    double hmd_x, hmd_y, hmd_z;
+    double fin_x, fin_y, fin_z;
+    double rect_x, rect_y;
+    int img_w = vr->width * vr->col, img_h = vr->height * vr->row;
+    int FOVWidth = img_w / 4, FOVHeight = img_w / 4;
+    int tile_w = vr->width, tile_h = vr->height;
+    int row = vr->row, col = vr->col;
+    int TileProb[72] = {0};
+    for( int i = - FOVHeight/2 ; i <= FOVHeight/2 ; i++){
+        for( int j = - FOVWidth/2 ; j <= FOVWidth/2 ; j++ ){
+            hmd_x = -1.0;
+            hmd_y = 2.0 * j / FOVWidth;
+            hmd_z = 2.0 * i / FOVHeight;
+            
+            fin_x = RotationMatrix[0][0] * hmd_x + RotationMatrix[0][1] * hmd_y + RotationMatrix[0][2] * hmd_z;
+            fin_y = RotationMatrix[1][0] * hmd_x + RotationMatrix[1][1] * hmd_y + RotationMatrix[1][2] * hmd_z;
+            fin_z = RotationMatrix[2][0] * hmd_x + RotationMatrix[2][1] * hmd_y + RotationMatrix[2][2] * hmd_z;
+            
+            total = sqrt(fin_x*fin_x+fin_y*fin_y+fin_z*fin_z);
+            fin_x = fin_x  / total;
+            fin_y = fin_y  / total;
+            fin_z = fin_z  / total;
 
+            double beta, alpha;
+            if(1.0 - fabs(fin_z) < 0.00001){
+                if(fin_z > 0) beta = 0;
+                else          beta = M_PI;
+                alpha = 0;
+            }
+            else{
+                beta = acos(fin_z);
+                alpha = asin( - fin_y / sin(beta));  //-pi/2 + pi/2
+                if(fin_y < 0 && fin_x > 0)
+                    alpha = alpha;
+                else if(fin_x < 0)
+                    alpha = M_PI - alpha;
+                else
+                    alpha = 2.0 * M_PI + alpha;
+            }
+            rect_x = img_w * alpha / (2.0 * M_PI);
+            rect_y = img_h * beta / M_PI;
+
+            int x = floor(rect_x), y = floor(rect_y);
+            if (x >= 0 && x < img_w && y >= 0 && y < img_h)
+                TileProb[(x      / tile_w)+ 1 + (y / tile_h) * col]++;
+            if (x + 1 >= 0 && x + 1 < img_h && y >= 0 && y < img_w)
+                TileProb[(x + 1) / tile_w + 1 + (y / tile_h) * col]++;
+            if (x >= 0 && x < img_h && y + 1 >= 0 && y + 1 < img_w)
+                TileProb[(x      / tile_w)+ 1 + ((y + 1) / tile_h) * col]++;
+            if (x + 1 >= 0 && x + 1 < img_h && y + 1 >= 0 && y + 1 < img_w)
+                TileProb[(x + 1) / tile_w + 1 + ((y + 1) / tile_h) * col]++;
+            
+        }
+    }
+    char ori[1024];
+    for (int i = 1 ; i <= row * col ; i++){
+        if(TileProb[i]>0)   snprintf(ori, sizeof(ori), "%s", "1");
+        else                snprintf(ori, sizeof(ori), "%s", "0");
+    }
+    av_opt_set(vr, "ori", ori, 0);
+    return 1;
+}
 static int vr_read_packet(AVFormatContext *avctx, AVPacket *pkt)
 {
     VRContext *vr = avctx->priv_data;
@@ -524,28 +617,32 @@ static int vr_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     ff_dlog(avctx, "min_pts_sink_idx:%i\n", min_pts_sink_idx);
 
     av_log(NULL, AV_LOG_DEBUG, "min_pts_sink_idx:%i \n", min_pts_sink_idx);  //byx-add
+    
+    cal_orientation(vr);
 
-    //zhd-add------------------------------------
     static int time_zhd = 0;
     int rate_zhd = -1;
-    //    av_log(NULL, AV_LOG_INFO, "time: %.2lf\n", min_pts / AV_TIME_BASE);
     time_zhd = min_pts / AV_TIME_BASE;
     int time_step = 2;
     int time_step2 = 3;
     int stream_nb = 5;
     if (time_zhd > 2) {
-        //        av_opt_get_int(lavfi->graph->filters[1]->priv, "rate_zhd", 0, &rate_zhd);
-        //        av_log(NULL, AV_LOG_INFO, "lavfi: %d -> %d\n", rate_zhd, time_zhd/time_step%stream_nb);
-
         av_opt_set_int(vr->graph->filters[1]->priv, "rate_zhd", time_zhd/time_step%stream_nb, 0);
         av_opt_set_int(vr->graph->filters[2]->priv, "rate_zhd", (stream_nb - time_zhd/time_step%stream_nb)%stream_nb, 0);
         av_opt_set_int(vr->graph->filters[3]->priv, "rate_zhd", time_zhd/time_step2%stream_nb, 0);
 
-        //        av_opt_set_double(lavfi->graph->filters[0]->priv, "d", min_pts / AV_TIME_BASE, 0);
     }
     //zhd-add------------------------------------
 
-
+    int nb_tiles = vr->col * vr->row;
+    for(int i = 0 ; i< nb_tiles ; i++){
+        if(vr->ori[i] == '1'){
+            av_opt_set_int(vr->graph->filters[i]->priv, "rate_zhd", 1, 0);
+        }
+        else{
+            av_opt_set_int(vr->graph->filters[i]->priv, "rate_zhd", 0, 0);
+        }
+    }  //wyx-add
 
     av_buffersink_get_frame_flags(vr->sinks[min_pts_sink_idx], frame, 0);
     stream_idx = vr->sink_stream_map[min_pts_sink_idx];
@@ -617,43 +714,8 @@ static const AVOption options[] = {
     { "size",      "set tile size",         OFFSET(width),      AV_OPT_TYPE_IMAGE_SIZE,  {.str = NULL}, 0, 0, DEC },
     { "layout",    "set tile layout",       OFFSET(col),        AV_OPT_TYPE_IMAGE_SIZE,  {.str = NULL}, 0, 0, DEC },
     { "url",       "set urls",              OFFSET(url),        AV_OPT_TYPE_STRING,      {.str = NULL}, 0, 0, DEC },
+    { "ori",       "set orientation",       OFFSET(ori),        AV_OPT_TYPE_STRING,      {.str = NULL}, 0, 0, DEC },  //byx-add
 
-//    { "format_name",  "set format name",         OFFSET(format_name),  AV_OPT_TYPE_STRING,                                    .flags = FLAGS },
-//    { "f",            "set format name",         OFFSET(format_name),  AV_OPT_TYPE_STRING,                                    .flags = FLAGS },
-//    { "stream_index", "set stream index",        OFFSET(stream_index), AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX,                 FLAGS  },
-//    { "si",           "set stream index",        OFFSET(stream_index), AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX,                 FLAGS  },
-//    { "seek_point",   "set seekpoint (seconds)", OFFSET(seek_point_d), AV_OPT_TYPE_DOUBLE, { .dbl =  0 },  0, (INT64_MAX-1) / 1000000, FLAGS },
-//    { "sp",           "set seekpoint (seconds)", OFFSET(seek_point_d), AV_OPT_TYPE_DOUBLE, { .dbl =  0 },  0, (INT64_MAX-1) / 1000000, FLAGS },
-//    { "streams",      "set streams",             OFFSET(stream_specs), AV_OPT_TYPE_STRING, {.str =  0},  CHAR_MAX, CHAR_MAX, FLAGS },
-//    { "s",            "set streams",             OFFSET(stream_specs), AV_OPT_TYPE_STRING, {.str =  0},  CHAR_MAX, CHAR_MAX, FLAGS },
-//    { "loop",         "set loop count",          OFFSET(loop_count),   AV_OPT_TYPE_INT,    {.i64 =  1},  0,        INT_MAX, FLAGS },
-//    { "discontinuity", "set discontinuity threshold", OFFSET(discontinuity_threshold), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, INT64_MAX, FLAGS },
-//    { "orientation",  "set orientation",         OFFSET(orientation),  AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MAX, CHAR_MAX, FLAGS},  //byx-add
-//    { "orientation_last",  "set if orientation is changed",         OFFSET(orientation_last),  AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MAX, CHAR_MAX, FLAGS},  //byx-add
-//    { "rate_zhd",     "set rate_zhd",            OFFSET(rate_zhd),     AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX,                 FLAGS  }, // zhd add
-//    { "x", "set the x expression", OFFSET(x_expr), AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MIN, CHAR_MAX, FLAGS },
-//    { "y", "set the y expression", OFFSET(y_expr), AV_OPT_TYPE_STRING, {.str = "0"}, CHAR_MIN, CHAR_MAX, FLAGS },
-//    { "eof_action", "Action to take when encountering EOF from secondary input ",
-//        OFFSET(fs.opt_eof_action), AV_OPT_TYPE_INT, { .i64 = EOF_ACTION_REPEAT },
-//        EOF_ACTION_REPEAT, EOF_ACTION_PASS, .flags = FLAGS, "eof_action" },
-//    { "repeat", "Repeat the previous frame.",   0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_REPEAT }, .flags = FLAGS, "eof_action" },
-//    { "endall", "End both streams.",            0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_ENDALL }, .flags = FLAGS, "eof_action" },
-//    { "pass",   "Pass through the main input.", 0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_PASS },   .flags = FLAGS, "eof_action" },
-//    { "eval", "specify when to evaluate expressions", OFFSET(eval_mode), AV_OPT_TYPE_INT, {.i64 = EVAL_MODE_FRAME}, 0, EVAL_MODE_NB-1, FLAGS, "eval" },
-//    { "init",  "eval expressions once during initialization", 0, AV_OPT_TYPE_CONST, {.i64=EVAL_MODE_INIT},  .flags = FLAGS, .unit = "eval" },
-//    { "frame", "eval expressions per-frame",                  0, AV_OPT_TYPE_CONST, {.i64=EVAL_MODE_FRAME}, .flags = FLAGS, .unit = "eval" },
-//    { "shortest", "force termination when the shortest input terminates", OFFSET(fs.opt_shortest), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
-//    { "format", "set output format", OFFSET(format), AV_OPT_TYPE_INT, {.i64=OVERLAY_FORMAT_YUV420}, 0, OVERLAY_FORMAT_NB-1, FLAGS, "format" },
-//    { "yuv420", "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_YUV420}, .flags = FLAGS, .unit = "format" },
-//    { "yuv422", "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_YUV422}, .flags = FLAGS, .unit = "format" },
-//    { "yuv444", "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_YUV444}, .flags = FLAGS, .unit = "format" },
-//    { "rgb",    "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_RGB},    .flags = FLAGS, .unit = "format" },
-//    { "gbrp",   "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_GBRP},   .flags = FLAGS, .unit = "format" },
-//    { "auto",   "", 0, AV_OPT_TYPE_CONST, {.i64=OVERLAY_FORMAT_AUTO},   .flags = FLAGS, .unit = "format" },
-//    { "repeatlast", "repeat overlay of the last overlay frame", OFFSET(fs.opt_repeatlast), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
-//    { "alpha", "alpha format", OFFSET(alpha_format), AV_OPT_TYPE_INT, {.i64=0}, 0, 1, FLAGS, "alpha_format" },
-//    { "straight",      "", 0, AV_OPT_TYPE_CONST, {.i64=0}, .flags = FLAGS, .unit = "alpha_format" },
-//    { "premultiplied", "", 0, AV_OPT_TYPE_CONST, {.i64=1}, .flags = FLAGS, .unit = "alpha_format" },
     { NULL },
 };
 
@@ -675,4 +737,108 @@ AVInputFormat ff_vr_demuxer = {
     .flags          = AVFMT_NOFILE,
     .priv_class     = &vr_class,
 };
+
+//#include <stdio.h>
+//#include <stdlib.h>
+//#include <limits.h>
+//#include <string>
+//#include <string.h>
+//#include <assert.h>
+//#include <queue>
+//#include <vector>
+//#include <math.h>
+//#include <algorithm>
+//using namespace std;
+//void normolize(double &x, double &y, double &z){
+//    double total = sqrt(x*x+y*y+z*z);
+//    x /= total;
+//    y /= total;
+//    z /= total;
+//}
+//void sph2rect(double &fin_x, double &fin_y, double &fin_z, double &rect_x, double &rect_y, int &w, int &h){
+//    double beta, alpha;
+//    if(abs(fin_y) - 1.0 < 0.00001){
+//        if(fin_y > 0) beta = 0;
+//        else          beta = M_PI;
+//        alpha = 0;
+//    }
+//    else{
+//        beta = acos(fin_y);
+//        alpha = asin( - fin_x / sin(beta));  //-pi/2 + pi/2
+//        if(fin_x < 0 && fin_z < 0){
+//            alpha = alpha;
+//        }
+//        else if(fin_z > 0){
+//            alpha = M_PI - alpha;
+//        }
+//        else{
+//            alpha = M_2_PI + alpha;
+//        }
+//    }
+//    rect_x = w * alpha / M_2_PI;
+//    rect_y = h * beta / M_PI;
+//}
+//
+//int main(){
+//    double mouse_x, mouse_y; //鼠标坐标
+//    scanf("%lf%lf", &mouse_x, &mouse_y);
+//    double alpha = mouse_x * 2.0 * M_PI;
+//    double beta =  mouse_y * M_PI;
+//    double sp_x = - sin(beta) * sin(alpha);
+//    double sp_y =   cos(beta);
+//    double sp_z = - sin(beta) * cos(alpha);
+//    double qua_theta = 0.5 * acos(sp_z) ; //(0,0,1)与(sp_x,sp_y,sp_z)做点积运算
+//    double qua_w = cos(qua_theta);
+//    double qua_x = - sp_y;             //(0,0,1)与(sp_x,sp_y,sp_z)做叉积运算
+//    double qua_y =   sp_x;
+//    double qua_z = 0;
+//    normolize(qua_x, qua_y, qua_z);
+//    double RotationMatrix[3][3];
+//
+//    RotationMatrix[0][0] = 1.0 - 2.0 * qua_y * qua_y - 2.0 * qua_z * qua_z;
+//    RotationMatrix[0][1] =       2.0 * qua_x * qua_y - 2.0 * qua_w * qua_z;
+//    RotationMatrix[0][2] =       2.0 * qua_x * qua_z + 2.0 * qua_w * qua_y;
+//
+//    RotationMatrix[1][0] =       2.0 * qua_x * qua_y + 2.0 * qua_w * qua_z;
+//    RotationMatrix[1][1] = 1.0 - 2.0 * qua_x * qua_x - 2.0 * qua_w * qua_w;
+//    RotationMatrix[1][2] =       2.0 * qua_x * qua_y - 2.0 * qua_w * qua_x;
+//
+//    RotationMatrix[2][0] =       2.0 * qua_x * qua_z - 2.0 * qua_w * qua_y;
+//    RotationMatrix[2][1] =       2.0 * qua_y * qua_z + 2.0 * qua_w * qua_x;
+//    RotationMatrix[2][2] = 1.0 - 2.0 * qua_x * qua_x - 2.0 * qua_y * qua_y;
+//
+//    double hmd_x, hmd_y, hmd_z;
+//    double fin_x, fin_y, fin_z;
+//    double rect_x, rect_y;
+//    int img_w = 2880, img_h = 1440;
+//    int FOVWidth = 720, FOVHeight = 720;
+//    int tile_w = 720, tile_h = 480;
+//    int row = 3, col = 4;
+//    int TileProb[72] = {0};
+//    for( int i = - FOVHeight/2 ; i <= FOVHeight/2 ; i++){
+//        for( int j = - FOVWidth/2 ; j <= FOVWidth/2 ; j++ ){
+//            hmd_x = 2.0 * j / FOVWidth;
+//            hmd_y = 2.0 * i / FOVHeight;
+//            hmd_z = 1.0;
+//            fin_x = RotationMatrix[0][0] * hmd_x + RotationMatrix[0][1] * hmd_y + RotationMatrix[0][2] * hmd_z; //z
+//            fin_y = RotationMatrix[1][0] * hmd_x + RotationMatrix[1][1] * hmd_y + RotationMatrix[1][2] * hmd_z; //x
+//            fin_z = RotationMatrix[2][0] * hmd_x + RotationMatrix[2][1] * hmd_y + RotationMatrix[2][2] * hmd_z; //y
+//            normolize(fin_x, fin_y, fin_z);
+//            sph2rect(fin_x, fin_y, fin_z, rect_x, rect_y, img_w, img_h);
+//            int x = floor(rect_y), y = floor(rect_x);
+//
+//            if (x >= 0 && x < img_h && y >= 0 && y < img_w)                   TileProb[(x      / tile_w)+ 1 + row * y       / tile_h]++;
+//            if (x + 1 >= 0 && x + 1 < img_h && y >= 0 && y < img_w)           TileProb[(x + 1) / tile_w + 1 + row * y       / tile_h]++;
+//            if (x >= 0 && x < img_h && y + 1 >= 0 && y + 1 < img_w)           TileProb[(x      / tile_w)+ 1 + row * (y + 1) / tile_h]++;
+//            if (x + 1 >= 0 && x + 1 < img_h && y + 1 >= 0 && y + 1 < img_w)   TileProb[(x + 1) / tile_w     + row * (y + 1) / tile_h]++;
+//
+//        }
+//    }
+//    for (int i = 1 ; i <= row * col ; i++){
+//        if(TileProb[i]>0)   printf("1");
+//        else                printf("0");
+//    }
+//    printf("\n");
+//}
+
 
