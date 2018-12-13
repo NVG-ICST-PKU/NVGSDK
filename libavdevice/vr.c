@@ -630,7 +630,7 @@ static int vr_read_packet(AVFormatContext *avctx, AVPacket *pkt)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 
 static const AVOption options[] = {
-	{ "orientation_cur", "set current orientation", OFFSET(orientation_cur),AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, FLAGS  }, // sj add
+    { "orientation_cur", "set current orientation", OFFSET(orientation_cur),AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, FLAGS  }, // sj add
     { "graph",     "set libavfilter graph", OFFSET(graph_str),  AV_OPT_TYPE_STRING,      {.str = NULL}, 0, 0, DEC },
     { "graph_file","set libavfilter graph filename", OFFSET(graph_filename), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC},
     { "dumpgraph", "dump graph to stderr",  OFFSET(dump_graph), AV_OPT_TYPE_STRING,      {.str = NULL}, 0, 0, DEC },
