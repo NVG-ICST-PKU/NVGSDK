@@ -3321,24 +3321,21 @@ static void event_loop(VideoState *cur_stream)
 
         // zhd add -------------------------------------------------------------------
         if (event.type == SDL_MOUSEBUTTONDOWN &&  event.button.button == SDL_BUTTON_LEFT) {
-            double x_zhd = (double)event.button.x / cur_stream->width;
-            double y_zhd = (double)event.button.y / cur_stream->height;
-            int orientation = 0;
-            if (x_zhd > 0 && x_zhd < 0.5) {
-                ;
-            } else if (x_zhd > 0.5 && x_zhd < 1) {
-                orientation += 10;
+            SDL_Rect rect;
+            Frame *vp;
+            double x, y;
+
+            vp = frame_queue_peek_last(&cur_stream->pictq);
+            calculate_display_rect(&rect, cur_stream->xleft, cur_stream->ytop, cur_stream->width, cur_stream->height, vp->width, vp->height, vp->sar);
+
+            x = (double)(event.button.x - rect.x) / rect.w;
+            y = (double)(event.button.y - rect.y) / rect.h;
+            if (event.button.x - rect.x > 0 && event.button.x - rect.x < rect.w
+                    && event.button.y - rect.y > 0 && event.button.y - rect.y < rect.h) {
+                av_log(NULL, AV_LOG_INFO, "x = %lf, y = %lf\n", x, y);
+                av_opt_set_double(cur_stream->ic->priv_data, "x", x, 0);
+                av_opt_set_double(cur_stream->ic->priv_data, "y", y, 0);
             }
-            if (y_zhd > 0 && y_zhd < 0.5) {
-                ;
-            } else if (y_zhd > 0.5 && y_zhd < 1) {
-                orientation += 1;
-            }
-//            av_log(NULL, AV_LOG_INFO, "x = %d, y = %d\n", event.button.x, event.button.y);
-//            av_log(NULL, AV_LOG_INFO, "width = %d, height = %d\n", cur_stream->width, cur_stream->height);
-//            av_log(NULL, AV_LOG_INFO, "xleft = %d, ytop = %d\n", cur_stream->xleft, cur_stream->ytop);
-//            av_log(NULL, AV_LOG_INFO, "x_zhd = %lf, y_zhd = %lf\n", x_zhd, y_zhd);
-            av_opt_set_int(cur_stream->ic->priv_data, "orientation", orientation, 0);
         }
         // -------------------------------------------------------------------
 
